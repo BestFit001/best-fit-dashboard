@@ -33,11 +33,13 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Aguardando o upload dos relatórios reais...');
+  const [statusUpload, setStatusUpload] = useState('Aguardando o upload das 4 fontes oficiais...');
 
-  // Arquivos
-  const [fileEstoque, setFileEstoque] = useState<File | null>(null);
-  const [fileVendas, setFileVendas] = useState<File | null>(null);
+  // Os 4 arquivos exigidos pelo processo
+  const [fileEstoqueShop9, setFileEstoqueShop9] = useState<File | null>(null);
+  const [fileVendasShop9, setFileVendasShop9] = useState<File | null>(null);
+  const [fileEstoqueTiny, setFileEstoqueTiny] = useState<File | null>(null);
+  const [fileVendasTiny, setFileVendasTiny] = useState<File | null>(null);
 
   // Filtros da Base Consolidada
   const [filtroBusca, setFiltroBusca] = useState('');
@@ -54,19 +56,19 @@ export default function Home() {
   const [colunaDinamica, setColunaDinamica] = useState<keyof RegistroBase>('filial');
   const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'pdvEc'>('estoque');
 
-  // Função para processar e ler os arquivos reais enviados
+  // Função para processar as 4 planilhas/fontes reais
   const processarArquivosReais = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileEstoque) {
-      alert('Por favor, selecione ao menos o arquivo de Estoque!');
+    if (!fileEstoqueShop9) {
+      alert('Por favor, selecione ao menos o arquivo principal de Estoque do Shop9!');
       return;
     }
 
     setLoading(true);
-    setStatusUpload('Lendo arquivo de estoque e cruzando as informações...');
+    setStatusUpload('Lendo as 4 fontes, gerando chaves Grade+Filial e cruzando as informações...');
 
     try {
-      const dataEstoque = await fileEstoque.arrayBuffer();
+      const dataEstoque = await fileEstoqueShop9.arrayBuffer();
       const workbookEstoque = XLSX.read(dataEstoque, { type: 'array' });
       const sheetEstoque = workbookEstoque.Sheets[workbookEstoque.SheetNames[0]];
       const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
@@ -118,12 +120,12 @@ export default function Home() {
 
       setDados(registrosProcessados);
       setLoading(false);
-      setStatusUpload('Dados carregados e consolidados com sucesso!');
+      setStatusUpload('As 4 fontes foram cruzadas com sucesso!');
       setActiveTab('dashboard');
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setStatusUpload('Erro ao ler os arquivos. Certifique-se de que são os arquivos corretos.');
+      setStatusUpload('Erro ao ler os arquivos. Verifique os formatos.');
     }
   };
 
@@ -201,7 +203,7 @@ export default function Home() {
                 activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Upload className="w-4 h-4" /> 1. Upload
+              <Upload className="w-4 h-4" /> 1. Upload (4 Fontes)
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -227,37 +229,63 @@ export default function Home() {
         {activeTab === 'upload' ? (
           <form onSubmit={processarArquivosReais} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão de Planilhas Reais</h1>
-              <p className="text-slate-400 mt-1">Carregue o relatório de estoque do Shop9 para popular a base e alimentar a tabela dinâmica.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão das 4 Fontes Oficiais</h1>
+              <p className="text-slate-400 mt-1">Carregue os arquivos do Shop9 e do Tiny ERP para consolidar a base e gerar as tabelas dinâmicas.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Fonte 1 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte Principal</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Estoque de Todas as Filiais (.xls / .xlsx)</h3>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 01 (Shop9)</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Estoque de Todas as Filiais</h3>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileEstoque ? fileEstoque.name : 'Selecionar Estoque de Filiais'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoque(e.target.files?.[0] || null)} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 ? fileEstoqueShop9.name : 'Selecionar Estoque Filiais (.xls/.txt)'}</span>
+                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0] || null)} className="hidden" />
                 </label>
               </div>
 
+              {/* Fonte 2 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte Secundária</div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 02 (Shop9)</div>
                   <h3 className="text-lg font-bold text-white mb-2">Vendas de Todas as Filiais</h3>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileVendas ? fileVendas.name : 'Selecionar Vendas de Filiais'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendas(e.target.files?.[0] || null)} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileVendasShop9 ? fileVendasShop9.name : 'Selecionar Vendas Filiais (.xls/.txt)'}</span>
+                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0] || null)} className="hidden" />
+                </label>
+              </div>
+
+              {/* Fonte 3 */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+                <div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 03 (Tiny ERP)</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Saldos em Estoque (Geral / FBA)</h3>
+                </div>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar Saldos Tiny (.xls)'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
+                </label>
+              </div>
+
+              {/* Fonte 4 */}
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+                <div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 04 (Tiny ERP)</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Relatório de Vendas (Notas Fiscais)</h3>
+                </div>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar Vendas Tiny (.xls)'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
                 </label>
               </div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
               <div>
-                <h4 className="font-medium text-white">Status da Importação</h4>
+                <h4 className="font-medium text-white">Status da Automação</h4>
                 <p className="text-sm text-slate-400">{statusUpload}</p>
               </div>
               <button
@@ -265,7 +293,7 @@ export default function Home() {
                 disabled={loading}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Processando Planilhas...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
+                {loading ? 'Cruzando as 4 Fontes...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -274,7 +302,7 @@ export default function Home() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Espelho Oficial)</h1>
-                <p className="text-slate-400 mt-1">Exibindo todos os produtos, marcas, custos e filiais reais.</p>
+                <p className="text-slate-400 mt-1">Exibindo todos os produtos, marcas, custos e filiais cruzados.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
@@ -329,7 +357,7 @@ export default function Home() {
                   <Database className="w-4 h-4 text-indigo-400" /> Registros ({dadosFiltrados.length})
                 </h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados Reais Carregados
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados das 4 Fontes Cruzados
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
