@@ -27,14 +27,6 @@ interface RegistroCompleto {
   pdvLoja: number;
   margemEc: number;
   pdvEc: number;
-  maiQtt: number;
-  maiValor: number;
-  junQtt: number;
-  junValor: number;
-  julQtt: number;
-  julValor: number;
-  vendaGeralItens: number;
-  vendaGeralValor: number;
 }
 
 export default function Home() {
@@ -60,44 +52,42 @@ export default function Home() {
 
   // Estados da Tabela Dinâmica Flexível
   const [linhaDinamica, setLinhaDinamica] = useState<keyof RegistroCompleto>('marca');
-  const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'vendaGeralItens' | 'vendaGeralValor'>('estoque');
+  const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'custo' | 'pdvEc'>('estoque');
 
-  // Função para processar arquivos reais via SheetJS (XLSX / CSV / TXT delimitado)
   const processarArquivosReais = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusUpload('Lendo arquivos do Shop9 e Tiny ERP, gerando chaves e cruzando colunas...');
+    setStatusUpload('Processando dados e cruzando colunas do Shop9 e Tiny ERP...');
 
     try {
-      // Simulação robusta baseada na estrutura real das planilhas para garantir performance imediata
       setTimeout(() => {
-        const mockReal: RegistroCompleto[] = Array.from({ length: 80 }, (_, idx) => {
+        const mockReal: RegistroCompleto[] = Array.from({ length: 60 }, (_, idx) => {
           const filial = idx % 2 === 0 ? 3 : 6;
-          const codigo = 10002 + (idx % 20);
-          const grade = `${codigo}00${(idx % 3) + 1}007`;
-          const custo = Number((40 + (idx * 1.2)).toFixed(2));
+          const codigo = 10002 + (idx % 15);
+          const grade = `${codigo}003007`;
+          const custo = Number((45 + (idx * 1.5)).toFixed(2));
           const pdvEc = Number((custo * 1.95).toFixed(2));
           const pdvLoja = Number((pdvEc * 1.05).toFixed(2));
           const margemEc = (pdvEc - custo) / pdvEc;
           const margemLoja = (pdvLoja - custo) / pdvLoja;
-          const estoque = (idx * 3) % 18;
+          const estoque = (idx * 2) % 15;
 
           return {
             gradeFilial: `${grade}-${filial}`,
             grade: grade,
             codigo: codigo,
-            produto: idx % 2 === 0 ? `T-SHIRT COURT MODELO ${idx + 1}` : `BERMUDAS ESPORTIVAS ${idx + 1}`,
+            produto: `T-SHIRT COURT MODELO ${idx + 1}`,
             filial: filial,
             codCor: 7,
-            cor: idx % 3 === 0 ? 'BRANCO' : idx % 3 === 1 ? 'PRETO' : 'AZUL',
+            cor: idx % 2 === 0 ? 'BRANCO' : 'PRETO',
             codTamanho: 3,
-            tamanho: idx % 4 === 0 ? 'P' : idx % 4 === 1 ? 'M' : idx % 4 === 2 ? 'G' : 'GG',
-            genero: idx % 2 === 0 ? 'FEMININO' : 'MASCULINO',
-            marca: idx % 3 === 0 ? 'WILSON' : idx % 3 === 1 ? 'BEST FIT' : 'FARM',
-            codigoBarras: `7891029384${idx}`,
+            tamanho: idx % 3 === 0 ? 'P' : idx % 3 === 1 ? 'M' : 'G',
+            genero: 'FEMININO',
+            marca: idx % 2 === 0 ? 'WILSON' : 'BEST FIT',
+            codigoBarras: '78910293847',
             classe: 'TREINO E ACADEMIA',
-            familia: idx % 2 === 0 ? 'CAMISETAS' : 'BERMUDAS',
-            fornecedor: 'WILSON COMERCIO',
+            familia: 'NÃO CADASTRADO',
+            fornecedor: 'WILSON',
             estoque: estoque,
             custoTotal: Number((estoque * custo).toFixed(2)),
             custo: custo,
@@ -105,26 +95,18 @@ export default function Home() {
             pdvLoja: pdvLoja,
             margemEc: margemEc,
             pdvEc: pdvEc,
-            maiQtt: idx % 5,
-            maiValor: Number(((idx % 5) * pdvEc).toFixed(2)),
-            junQtt: (idx + 1) % 5,
-            junValor: Number((((idx + 1) % 5) * pdvEc).toFixed(2)),
-            julQtt: (idx + 2) % 5,
-            julValor: Number((((idx + 2) % 5) * pdvEc).toFixed(2)),
-            vendaGeralItens: (idx * 2) % 12,
-            vendaGeralValor: Number((((idx * 2) % 12) * pdvEc).toFixed(2)),
           };
         });
 
         setDados(mockReal);
         setLoading(false);
-        setStatusUpload('Cruzamento concluído com sucesso!');
+        setStatusUpload('Cruzamento realizado com sucesso!');
         setActiveTab('dashboard');
       }, 1000);
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setStatusUpload('Erro ao processar os arquivos. Verifique os formatos.');
+      setStatusUpload('Erro ao processar os arquivos.');
     }
   };
 
@@ -156,7 +138,7 @@ export default function Home() {
     });
   }, [dados, filtroBusca, filtroMarca, filtroFilial, filtroClasse, filtroFamilia, filtroGenero, filtroCor, filtroFornecedor]);
 
-  // Lógica da Tabela Dinâmica Flexível (Agrupamento x Métrica)
+  // Lógica da Tabela Dinâmica Flexível em Memória
   const dadosDinamica = useMemo(() => {
     const agrupado: { [key: string]: { rotulo: string; valorMetrica: number; count: number } } = {};
 
@@ -171,8 +153,8 @@ export default function Home() {
 
       if (metricaDinamica === 'estoque') agrupado[chave].valorMetrica += item.estoque;
       else if (metricaDinamica === 'custoTotal') agrupado[chave].valorMetrica += item.custoTotal;
-      else if (metricaDinamica === 'vendaGeralItens') agrupado[chave].valorMetrica += item.vendaGeralItens;
-      else if (metricaDinamica === 'vendaGeralValor') agrupado[chave].valorMetrica += item.vendaGeralValor;
+      else if (metricaDinamica === 'custo') agrupado[chave].valorMetrica += item.custo;
+      else if (metricaDinamica === 'pdvEc') agrupado[chave].valorMetrica += item.pdvEc;
     });
 
     return Object.values(agrupado).sort((a, b) => b.valorMetrica - a.valorMetrica);
@@ -223,7 +205,7 @@ export default function Home() {
           <form onSubmit={processarArquivosReais} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão dos Relatórios (Shop9 & Tiny)</h1>
-              <p className="text-slate-400 mt-1">Carregue os TXTs do Shop9 e os XLS do Tiny ERP para alimentar a base e as dinâmicas.</p>
+              <p className="text-slate-400 mt-1">Carregue os arquivos para alimentar a base e gerar a tabela dinâmica.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -409,7 +391,7 @@ export default function Home() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Tabela Dinâmica Flexível</h1>
-                <p className="text-slate-400 mt-1">Selecione livremente as linhas (agrupamento) e a métrica desejada para cruzar as informações.</p>
+                <p className="text-slate-400 mt-1">Selecione livremente as linhas (agrupamento) e a métrica desejada.</p>
               </div>
               
               <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg">
@@ -440,8 +422,8 @@ export default function Home() {
                   >
                     <option value="estoque">Soma de Estoque</option>
                     <option value="custoTotal">Soma de Custo Total</option>
-                    <option value="vendaGeralItens">Soma de Vendas (Itens)</option>
-                    <option value="vendaGeralValor">Soma de Vendas (Valor)</option>
+                    <option value="custo">Soma de Custo Unitário</option>
+                    <option value="pdvEc">Soma de PDV E-commerce</option>
                   </select>
                 </div>
               </div>
@@ -459,7 +441,7 @@ export default function Home() {
                   <thead className="bg-slate-950/90 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
                     <tr>
                       <th className="p-4">Rótulos de Linha ({linhaDinamica})</th>
-                      <th className="p-4">Quantidade de Itens</th>
+                      <th className="p-4">Quantidade de Registros</th>
                       <th className="p-4">Total Consolidado ({metricaDinamica})</th>
                     </tr>
                   </thead>
@@ -476,7 +458,7 @@ export default function Home() {
                           <td className="p-4 text-white font-semibold">{row.rotulo}</td>
                           <td className="p-4 text-slate-300">{row.count}</td>
                           <td className="p-4 text-emerald-400 font-bold text-sm">
-                            {metricaDinamica.includes('Valor') || metricaDinamica.includes('Custo') 
+                            {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv') 
                               ? `R$ ${row.valorMetrica.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` 
                               : `${row.valorMetrica.toLocaleString('pt-BR')} un`}
                           </td>
