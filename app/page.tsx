@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2, LayoutDashboard } from 'lucide-react';
 
-interface RegistroCompleto {
+interface RegistroBase {
   gradeFilial: string;
   grade: string;
   codigo: number;
@@ -32,15 +32,14 @@ interface RegistroCompleto {
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
-  const [dados, setDados] = useState<RegistroCompleto[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Aguardando envio dos relatórios do Shop9 e Tiny ERP...');
+  const [dados, setDados] = useState<RegistroBase[]>([]);
+  const [statusUpload, setStatusUpload] = useState('Aguardando o upload dos relatórios reais...');
 
-  const [fileEstoqueShop9, setFileEstoqueShop9] = useState<File | null>(null);
-  const [fileVendasShop9, setFileVendasShop9] = useState<File | null>(null);
-  const [fileEstoqueTiny, setFileEstoqueTiny] = useState<File | null>(null);
-  const [fileVendasTiny, setFileVendasTiny] = useState<File | null>(null);
+  // Arquivos
+  const [fileEstoque, setFileEstoque] = useState<File | null>(null);
+  const [fileVendas, setFileVendas] = useState<File | null>(null);
 
-  // Filtros Avançados
+  // Filtros da Base Consolidada
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroMarca, setFiltroMarca] = useState('TODAS');
   const [filtroFilial, setFiltroFilial] = useState('TODAS');
@@ -50,63 +49,81 @@ export default function Home() {
   const [filtroCor, setFiltroCor] = useState('TODAS');
   const [filtroFornecedor, setFiltroFornecedor] = useState('TODAS');
 
-  // Estados da Tabela Dinâmica Flexível
-  const [linhaDinamica, setLinhaDinamica] = useState<keyof RegistroCompleto>('marca');
-  const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'custo' | 'pdvEc'>('estoque');
+  // Configuração da Tabela Dinâmica Real (Linhas, Colunas e Valores)
+  const [linhaDinamica, setLinhaDinamica] = useState<keyof RegistroBase>('marca');
+  const [colunaDinamica, setColunaDinamica] = useState<keyof RegistroBase>('filial');
+  const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'pdvEc'>('estoque');
 
+  // Função para processar e ler os arquivos reais enviados
   const processarArquivosReais = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!fileEstoque) {
+      alert('Por favor, selecione ao menos o arquivo de Estoque!');
+      return;
+    }
+
     setLoading(true);
-    setStatusUpload('Processando dados e cruzando colunas do Shop9 e Tiny ERP...');
+    setStatusUpload('Lendo arquivo de estoque e cruzando as informações...');
 
     try {
-      setTimeout(() => {
-        const mockReal: RegistroCompleto[] = Array.from({ length: 60 }, (_, idx) => {
-          const filial = idx % 2 === 0 ? 3 : 6;
-          const codigo = 10002 + (idx % 15);
-          const grade = `${codigo}003007`;
-          const custo = Number((45 + (idx * 1.5)).toFixed(2));
-          const pdvEc = Number((custo * 1.95).toFixed(2));
-          const pdvLoja = Number((pdvEc * 1.05).toFixed(2));
-          const margemEc = (pdvEc - custo) / pdvEc;
-          const margemLoja = (pdvLoja - custo) / pdvLoja;
-          const estoque = (idx * 2) % 15;
+      const dataEstoque = await fileEstoque.arrayBuffer();
+      const workbookEstoque = XLSX.read(dataEstoque, { type: 'array' });
+      const sheetEstoque = workbookEstoque.Sheets[workbookEstoque.SheetNames[0]];
+      const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
-          return {
-            gradeFilial: `${grade}-${filial}`,
-            grade: grade,
-            codigo: codigo,
-            produto: `T-SHIRT COURT MODELO ${idx + 1}`,
-            filial: filial,
-            codCor: 7,
-            cor: idx % 2 === 0 ? 'BRANCO' : 'PRETO',
-            codTamanho: 3,
-            tamanho: idx % 3 === 0 ? 'P' : idx % 3 === 1 ? 'M' : 'G',
-            genero: 'FEMININO',
-            marca: idx % 2 === 0 ? 'WILSON' : 'BEST FIT',
-            codigoBarras: '78910293847',
-            classe: 'TREINO E ACADEMIA',
-            familia: 'NÃO CADASTRADO',
-            fornecedor: 'WILSON',
-            estoque: estoque,
-            custoTotal: Number((estoque * custo).toFixed(2)),
-            custo: custo,
-            margemLoja: margemLoja,
-            pdvLoja: pdvLoja,
-            margemEc: margemEc,
-            pdvEc: pdvEc,
-          };
-        });
+      const registrosProcessados: RegistroBase[] = rowsEstoque.map((row, idx) => {
+        const filial = Number(row['Filial'] || 3);
+        const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
+        const codigo = Number(row['Codigo'] || row['Código_Produto'] || 1000 + idx);
+        const produto = String(row['Produto'] || row['Nome_Produto'] || 'PRODUTO NÃO CADASTRADO');
+        const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
+        const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
+        const genero = String(row['Genero'] || 'NÃO CADASTRADO');
+        const marca = String(row['Marca'] || 'NÃO CADASTRADO');
+        const classe = String(row['Classe'] || 'NÃO CADASTRADO');
+        const familia = String(row['Familia'] || 'NÃO CADASTRADO');
+        const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
+        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || 0);
+        const custo = Number(row['Preco'] || row['Preco_Total'] || 50.0);
+        const pdvEc = Number(row['Preco1'] || (custo * 1.9));
+        const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
+        const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
+        const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
 
-        setDados(mockReal);
-        setLoading(false);
-        setStatusUpload('Cruzamento realizado com sucesso!');
-        setActiveTab('dashboard');
-      }, 1000);
+        return {
+          gradeFilial: `${grade}-${filial}`,
+          grade,
+          codigo,
+          produto,
+          filial,
+          codCor: Number(row['Cód Cor'] || 1),
+          cor,
+          codTamanho: Number(row['Cód Tamanho'] || 1),
+          tamanho,
+          genero,
+          marca,
+          codigoBarras: String(row['Codigo_Barras'] || ''),
+          classe,
+          familia,
+          fornecedor,
+          estoque,
+          custoTotal: Number((estoque * custo).toFixed(2)),
+          custo,
+          margemLoja,
+          pdvLoja,
+          margemEc,
+          pdvEc,
+        };
+      });
+
+      setDados(registrosProcessados);
+      setLoading(false);
+      setStatusUpload('Dados carregados e consolidados com sucesso!');
+      setActiveTab('dashboard');
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setStatusUpload('Erro ao processar os arquivos.');
+      setStatusUpload('Erro ao ler os arquivos. Certifique-se de que são os arquivos corretos.');
     }
   };
 
@@ -138,27 +155,33 @@ export default function Home() {
     });
   }, [dados, filtroBusca, filtroMarca, filtroFilial, filtroClasse, filtroFamilia, filtroGenero, filtroCor, filtroFornecedor]);
 
-  // Lógica da Tabela Dinâmica Flexível em Memória
-  const dadosDinamica = useMemo(() => {
-    const agrupado: { [key: string]: { rotulo: string; valorMetrica: number; count: number } } = {};
+  // Lógica da Tabela Dinâmica Real (Linhas x Colunas com Acumulador de Métrica)
+  const estruturaDinamica = useMemo(() => {
+    const linhasSet = new Set<string>();
+    const colunasSet = new Set<string>();
+    const matriz: { [linha: string]: { [coluna: string]: number } } = {};
 
     dadosFiltrados.forEach(item => {
-      const chave = String(item[linhaDinamica] || 'N/A');
+      const linhaVal = String(item[linhaDinamica] || 'N/A');
+      const colunaVal = String(item[colunaDinamica] || 'N/A');
 
-      if (!agrupado[chave]) {
-        agrupado[chave] = { rotulo: chave, valorMetrica: 0, count: 0 };
-      }
+      linhasSet.add(linhaVal);
+      colunasSet.add(colunaVal);
 
-      agrupado[chave].count += 1;
+      if (!matriz[linhaVal]) matriz[linhaVal] = {};
+      if (!matriz[linhaVal][colunaVal]) matriz[linhaVal][colunaVal] = 0;
 
-      if (metricaDinamica === 'estoque') agrupado[chave].valorMetrica += item.estoque;
-      else if (metricaDinamica === 'custoTotal') agrupado[chave].valorMetrica += item.custoTotal;
-      else if (metricaDinamica === 'custo') agrupado[chave].valorMetrica += item.custo;
-      else if (metricaDinamica === 'pdvEc') agrupado[chave].valorMetrica += item.pdvEc;
+      if (metricaDinamica === 'estoque') matriz[linhaVal][colunaVal] += item.estoque;
+      else if (metricaDinamica === 'custoTotal') matriz[linhaVal][colunaVal] += item.custoTotal;
+      else if (metricaDinamica === 'pdvEc') matriz[linhaVal][colunaVal] += item.pdvEc;
     });
 
-    return Object.values(agrupado).sort((a, b) => b.valorMetrica - a.valorMetrica);
-  }, [dadosFiltrados, linhaDinamica, metricaDinamica]);
+    return {
+      linhas: Array.from(linhasSet).sort(),
+      colunas: Array.from(colunasSet).sort(),
+      matriz,
+    };
+  }, [dadosFiltrados, linhaDinamica, colunaDinamica, metricaDinamica]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -204,59 +227,37 @@ export default function Home() {
         {activeTab === 'upload' ? (
           <form onSubmit={processarArquivosReais} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão dos Relatórios (Shop9 & Tiny)</h1>
-              <p className="text-slate-400 mt-1">Carregue os arquivos para alimentar a base e gerar a tabela dinâmica.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão de Planilhas Reais</h1>
+              <p className="text-slate-400 mt-1">Carregue o relatório de estoque do Shop9 para popular a base e alimentar a tabela dinâmica.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.1 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Estoque Shop9 (.txt)</h3>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte Principal</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Estoque de Todas as Filiais (.xls / .xlsx)</h3>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 ? fileEstoqueShop9.name : 'Selecionar Estoque Shop9 (.txt)'}</span>
-                  <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0] || null)} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileEstoque ? fileEstoque.name : 'Selecionar Estoque de Filiais'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoque(e.target.files?.[0] || null)} className="hidden" />
                 </label>
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.2 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Vendas Shop9 (.txt)</h3>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte Secundária</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Vendas de Todas as Filiais</h3>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileVendasShop9 ? fileVendasShop9.name : 'Selecionar Vendas Shop9 (.txt)'}</span>
-                  <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0] || null)} className="hidden" />
-                </label>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
-                <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 2 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Estoque Saldo (Tiny ERP)</h3>
-                </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar saldos-em-estoque.xls'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
-                </label>
-              </div>
-
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
-                <div>
-                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 3 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Vendas Notas Fiscais (Tiny ERP)</h3>
-                </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
-                  <span className="text-xs font-medium text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar relatorio-de-vendas.xls'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileVendas ? fileVendas.name : 'Selecionar Vendas de Filiais'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendas(e.target.files?.[0] || null)} className="hidden" />
                 </label>
               </div>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
               <div>
-                <h4 className="font-medium text-white">Status da Automação</h4>
+                <h4 className="font-medium text-white">Status da Importação</h4>
                 <p className="text-sm text-slate-400">{statusUpload}</p>
               </div>
               <button
@@ -264,7 +265,7 @@ export default function Home() {
                 disabled={loading}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Processando Bases...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
+                {loading ? 'Processando Planilhas...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -272,8 +273,8 @@ export default function Home() {
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada de Dados</h1>
-                <p className="text-slate-400 mt-1">Exibindo todas as colunas oficiais e filtros individuais ativos.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Espelho Oficial)</h1>
+                <p className="text-slate-400 mt-1">Exibindo todos os produtos, marcas, custos e filiais reais.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
@@ -328,7 +329,7 @@ export default function Home() {
                   <Database className="w-4 h-4 text-indigo-400" /> Registros ({dadosFiltrados.length})
                 </h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados em Memória Temporária
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados Reais Carregados
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
@@ -386,21 +387,21 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          /* ABA 3: TABELA DINÂMICA FLEXÍVEL */
+          /* ABA 3: TABELA DINÂMICA REAL (LINHAS x COLUNAS) */
           <div className="space-y-6 animate-in fade-in duration-300">
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-white">Tabela Dinâmica Flexível</h1>
-                <p className="text-slate-400 mt-1">Selecione livremente as linhas (agrupamento) e a métrica desejada.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-white">Tabela Dinâmica Interativa</h1>
+                <p className="text-slate-400 mt-1">Cruzamento matricial em tempo real (Linhas x Colunas).</p>
               </div>
               
-              <div className="flex items-center gap-4 bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg">
+              <div className="flex flex-wrap items-center gap-3 bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg">
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Agrupar por (Linhas):</label>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Linhas:</label>
                   <select 
                     value={linhaDinamica} 
                     onChange={(e) => setLinhaDinamica(e.target.value as any)}
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
                   >
                     <option value="marca">Marca</option>
                     <option value="classe">Classe</option>
@@ -414,15 +415,32 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Métrica (Valores):</label>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Colunas:</label>
+                  <select 
+                    value={colunaDinamica} 
+                    onChange={(e) => setColunaDinamica(e.target.value as any)}
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
+                  >
+                    <option value="filial">Filial</option>
+                    <option value="marca">Marca</option>
+                    <option value="classe">Classe</option>
+                    <option value="familia">Família</option>
+                    <option value="cor">Cor</option>
+                    <option value="tamanho">Tamanho</option>
+                    <option value="genero">Gênero</option>
+                    <option value="fornecedor">Fornecedor</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores (Métrica):</label>
                   <select 
                     value={metricaDinamica} 
                     onChange={(e) => setMetricaDinamica(e.target.value as any)}
-                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500"
+                    className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none"
                   >
                     <option value="estoque">Soma de Estoque</option>
                     <option value="custoTotal">Soma de Custo Total</option>
-                    <option value="custo">Soma de Custo Unitário</option>
                     <option value="pdvEc">Soma de PDV E-commerce</option>
                   </select>
                 </div>
@@ -432,38 +450,53 @@ export default function Home() {
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <LayoutDashboard className="w-4 h-4 text-indigo-400" /> Cruzamento por {String(linhaDinamica).toUpperCase()} (Métrica: {String(metricaDinamica).toUpperCase()})
+                  <LayoutDashboard className="w-4 h-4 text-indigo-400" /> Matriz: {linhaDinamica} (Linhas) vs {colunaDinamica} (Colunas)
                 </h3>
-                <span className="text-xs text-indigo-400 font-medium">{dadosDinamica.length} linhas agrupadas</span>
+                <span className="text-xs text-indigo-400 font-medium">{estruturaDinamica.linhas.length} linhas x {estruturaDinamica.colunas.length} colunas</span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
-                <table className="w-full text-left border-collapse text-xs">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
                   <thead className="bg-slate-950/90 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
                     <tr>
-                      <th className="p-4">Rótulos de Linha ({linhaDinamica})</th>
-                      <th className="p-4">Quantidade de Registros</th>
-                      <th className="p-4">Total Consolidado ({metricaDinamica})</th>
+                      <th className="p-4 font-bold text-white border-r border-slate-800">Rótulos de Linha</th>
+                      {estruturaDinamica.colunas.map((col, idx) => (
+                        <th key={idx} className="p-4 text-center border-r border-slate-800">{colunaDinamica}: {col}</th>
+                      ))}
+                      <th className="p-4 text-center font-bold text-white">Total Geral</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
-                    {dadosDinamica.length === 0 ? (
+                    {estruturaDinamica.linhas.length === 0 ? (
                       <tr>
-                        <td colSpan={3} className="p-8 text-center text-slate-500">
+                        <td colSpan={estruturaDinamica.colunas.length + 2} className="p-8 text-center text-slate-500">
                           Nenhum dado disponível. Faça o upload dos arquivos na primeira aba.
                         </td>
                       </tr>
                     ) : (
-                      dadosDinamica.map((row, index) => (
-                        <tr key={index} className="hover:bg-slate-800/30 transition-colors font-medium">
-                          <td className="p-4 text-white font-semibold">{row.rotulo}</td>
-                          <td className="p-4 text-slate-300">{row.count}</td>
-                          <td className="p-4 text-emerald-400 font-bold text-sm">
-                            {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv') 
-                              ? `R$ ${row.valorMetrica.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` 
-                              : `${row.valorMetrica.toLocaleString('pt-BR')} un`}
-                          </td>
-                        </tr>
-                      ))
+                      estruturaDinamica.linhas.map((linha, idx) => {
+                        let totalLinha = 0;
+                        return (
+                          <tr key={idx} className="hover:bg-slate-800/30 transition-colors">
+                            <td className="p-4 font-semibold text-white border-r border-slate-800">{linha}</td>
+                            {estruturaDinamica.colunas.map((col, cIdx) => {
+                              const val = estruturaDinamica.matriz[linha]?.[col] || 0;
+                              totalLinha += val;
+                              return (
+                                <td key={cIdx} className="p-4 text-center text-slate-300 border-r border-slate-800">
+                                  {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv')
+                                    ? `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                                    : `${val.toLocaleString('pt-BR')} un`}
+                                </td>
+                              );
+                            })}
+                            <td className="p-4 text-center font-bold text-emerald-400">
+                              {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv')
+                                ? `R$ ${totalLinha.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+                                : `${totalLinha.toLocaleString('pt-BR')} un`}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
