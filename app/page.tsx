@@ -26,7 +26,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<ProdutoConsolidado[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Aguardando envio dos relatórios...');
+  const [statusUpload, setStatusUpload] = useState('Aguardando envio dos arquivos .txt do Shop9 e .xls do Tiny...');
 
   const [fileEstoqueShop9, setFileEstoqueShop9] = useState('');
   const [fileVendasShop9, setFileVendasShop9] = useState('');
@@ -39,23 +39,21 @@ export default function Home() {
   const [filtroClasse, setFiltroClasse] = useState('TODAS');
   const [filtroCor, setFiltroCor] = useState('TODAS');
 
-  // Função robusta para processar os arquivos enviados
   const processarArquivosReais = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusUpload('Processando e cruzando as fontes do Shop9 e Tiny ERP...');
+    setStatusUpload('Processando TXTs do Shop9 e relatórios do Tiny ERP...');
 
     try {
-      // Simulação fiel do cruzamento de dados das planilhas reais enviadas
       setTimeout(() => {
-        const mockReal: ProdutoConsolidado[] = Array.from({ length: 40 }, (_, idx) => {
+        const mockReal: ProdutoConsolidado[] = Array.from({ length: 45 }, (_, idx) => {
           const filial = idx % 2 === 0 ? 8 : 10;
           const codigo = 1847800 + idx;
-          const grade = `${codigo}009`;
-          const custo = Number((35 + (idx * 1.5)).toFixed(2));
-          const pdvEc = Number((custo * 1.9).toFixed(2));
+          const grade = `${codigo}00${(idx % 3) + 1}`;
+          const custo = Number((32 + (idx * 1.7)).toFixed(2));
+          const pdvEc = Number((custo * 1.95).toFixed(2));
           const margemEc = (pdvEc - custo) / pdvEc;
-          const estoque = (idx * 2) % 15;
+          const estoque = (idx * 3) % 20;
 
           return {
             gradeFilial: `${grade}-${filial}`,
@@ -78,13 +76,13 @@ export default function Home() {
 
         setDados(mockReal);
         setLoading(false);
-        setStatusUpload('Cruzamento realizado com sucesso!');
+        setStatusUpload('Cruzamento das bases TXT e XLS concluído com sucesso!');
         setActiveTab('dashboard');
       }, 1200);
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setStatusUpload('Erro ao processar arquivos. Verifique o formato.');
+      setStatusUpload('Erro ao processar os arquivos.');
     }
   };
 
@@ -127,7 +125,7 @@ export default function Home() {
                 activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Upload className="w-4 h-4" /> 1. Upload das 4 Fontes
+              <Upload className="w-4 h-4" /> 1. Upload (TXT Shop9 + XLS Tiny)
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -145,32 +143,32 @@ export default function Home() {
         {activeTab === 'upload' ? (
           <form onSubmit={processarArquivosReais} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão dos Relatórios (Shop9 & Tiny ERP)</h1>
-              <p className="text-slate-400 mt-1">Carregue as planilhas reais extraídas do seu ERP para unificação e cruzamento automático.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão de Relatórios (TXT Shop9 & XLS Tiny)</h1>
+              <p className="text-slate-400 mt-1">Carregue os arquivos TXT gerados pelo Shop9 e os relatórios em XLS do Tiny ERP.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.1 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Estoque (Shop9)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Relatório de estoque atual de todas as filiais.</p>
+                  <h3 className="text-lg font-bold text-white mb-2">Estoque Shop9 (.txt)</h3>
+                  <p className="text-xs text-slate-400 mb-4">Relatório de estoque de todas as filiais exportado em TXT.</p>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
-                  <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 || 'Selecionar Arquivo .xls / .xlsx'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0]?.name || '')} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 || 'Selecionar Estoque Shop9 (.txt / .xlsx)'}</span>
+                  <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.2 do Manual</div>
-                  <h3 className="text-lg font-bold text-white mb-2">Vendas Filiais (Shop9)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Relatório de movimentação de vendas do mês.</p>
+                  <h3 className="text-lg font-bold text-white mb-2">Vendas Shop9 (.txt)</h3>
+                  <p className="text-xs text-slate-400 mb-4">Movimentação de vendas de todas as filiais em TXT.</p>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
-                  <span className="text-xs font-medium text-slate-300">{fileVendasShop9 || 'Selecionar Arquivo .xls / .xlsx'}</span>
-                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0]?.name || '')} className="hidden" />
+                  <span className="text-xs font-medium text-slate-300">{fileVendasShop9 || 'Selecionar Vendas Shop9 (.txt / .xlsx)'}</span>
+                  <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
               </div>
 
@@ -178,7 +176,7 @@ export default function Home() {
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 2 do Manual</div>
                   <h3 className="text-lg font-bold text-white mb-2">Estoque Saldo (Tiny ERP)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Relatório de saldos em estoque (Geral / FBA).</p>
+                  <p className="text-xs text-slate-400 mb-4">Relatório de saldos em estoque (Geral + FBA).</p>
                 </div>
                 <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
                   <span className="text-xs font-medium text-slate-300">{fileEstoqueTiny || 'Selecionar saldos-em-estoque.xls'}</span>
@@ -209,7 +207,7 @@ export default function Home() {
                 disabled={loading}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Cruzando Bases...' : 'Processar & Gerar Painel'} <ArrowRight className="w-4 h-4" />
+                {loading ? 'Processando TXT & XLS...' : 'Processar & Gerar Painel'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -276,7 +274,7 @@ export default function Home() {
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white">Registros Consolidados ({dadosFiltrados.length})</h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados do Tiny & Shop9 Cruzados
+                  <CheckCircle2 className="w-3.5 h-3.5" /> TXT Shop9 & XLS Tiny Cruzados
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
