@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2 } from 'lucide-react';
+import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2, LayoutDashboard } from 'lucide-react';
 
 interface RegistroCompleto {
   gradeFilial: string;
@@ -38,17 +38,17 @@ interface RegistroCompleto {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'upload' | 'dashboard'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroCompleto[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Aguardando envio dos relatórios do Shop9 e Tiny ERP...');
+  const [statusUpload, setStatusUpload] = useState('Aguardando envio dos relatórios...');
 
   const [fileEstoqueShop9, setFileEstoqueShop9] = useState('');
   const [fileVendasShop9, setFileVendasShop9] = useState('');
   const [fileEstoqueTiny, setFileEstoqueTiny] = useState('');
   const [fileVendasTiny, setFileVendasTiny] = useState('');
 
-  // Filtros Avançados Individuais
+  // Filtros Avançados
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroMarca, setFiltroMarca] = useState('TODAS');
   const [filtroFilial, setFiltroFilial] = useState('TODAS');
@@ -58,14 +58,17 @@ export default function Home() {
   const [filtroCor, setFiltroCor] = useState('TODAS');
   const [filtroFornecedor, setFiltroFornecedor] = useState('TODAS');
 
+  // Estado da Tabela Dinâmica
+  const [agrupamentoDinamica, setAgrupamentoDinamica] = useState<'marca' | 'classe' | 'familia' | 'filial'>('marca');
+
   const processarArquivos = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusUpload('Processando e cruzando todas as colunas e fontes do Shop9 e Tiny ERP...');
+    setStatusUpload('Processando e cruzando todas as colunas do Shop9 e Tiny ERP...');
 
     try {
       setTimeout(() => {
-        const mockCompleto: RegistroCompleto[] = Array.from({ length: 50 }, (_, idx) => {
+        const mockCompleto: RegistroCompleto[] = Array.from({ length: 60 }, (_, idx) => {
           const filial = idx % 2 === 0 ? 3 : 6;
           const codigo = 10002 + idx;
           const grade = `${codigo}003007`;
@@ -83,14 +86,14 @@ export default function Home() {
             produto: `T-SHIRT COURT MODELO ${idx + 1}`,
             filial: filial,
             codCor: 7,
-            cor: 'BRANCO',
+            cor: idx % 2 === 0 ? 'BRANCO' : 'PRETO',
             codTamanho: 3,
-            tamanho: 'M',
-            genero: 'FEMININO',
-            marca: 'WILSON',
+            tamanho: idx % 3 === 0 ? 'P' : idx % 3 === 1 ? 'M' : 'G',
+            genero: idx % 2 === 0 ? 'FEMININO' : 'MASCULINO',
+            marca: idx % 2 === 0 ? 'WILSON' : 'BEST FIT',
             codigoBarras: '78910293847',
             classe: 'TREINO E ACADEMIA',
-            familia: 'NÃO CADASTRADO',
+            familia: idx % 2 === 0 ? 'BOLSAS E MOCHILAS' : 'CALÇAS E LEGGINGS',
             fornecedor: 'WILSON',
             estoque: estoque,
             custoTotal: Number((estoque * custo).toFixed(2)),
@@ -112,7 +115,7 @@ export default function Home() {
 
         setDados(mockCompleto);
         setLoading(false);
-        setStatusUpload('Cruzamento completo realizado com sucesso!');
+        setStatusUpload('Dados carregados com sucesso!');
         setActiveTab('dashboard');
       }, 1200);
     } catch (err) {
@@ -150,6 +153,31 @@ export default function Home() {
     });
   }, [dados, filtroBusca, filtroMarca, filtroFilial, filtroClasse, filtroFamilia, filtroGenero, filtroCor, filtroFornecedor]);
 
+  // Lógica da Tabela Dinâmica em Memória
+  const dadosDinamica = useMemo(() => {
+    const agrupado: { [key: string]: { rotulo: string; estoque: number; custoTotal: number; vendasItens: number; vendasValor: number; count: number } } = {};
+
+    dadosFiltrados.forEach(item => {
+      let chave = '';
+      if (agrupamentoDinamica === 'marca') chave = item.marca;
+      else if (agrupamentoDinamica === 'classe') chave = item.classe;
+      else if (agrupamentoDinamica === 'familia') chave = item.familia;
+      else if (agrupamentoDinamica === 'filial') chave = `Filial ${item.filial}`;
+
+      if (!agrupado[chave]) {
+        agrupado[chave] = { rotulo: chave, estoque: 0, custoTotal: 0, vendasItens: 0, vendasValor: 0, count: 0 };
+      }
+
+      agrupado[chave].estoque += item.estoque;
+      agrupado[chave].custoTotal += item.custoTotal;
+      agrupado[chave].vendasItens += item.vendaGeralItens;
+      agrupado[chave].vendasValor += item.vendaGeralValor;
+      agrupado[chave].count += 1;
+    });
+
+    return Object.values(agrupado);
+  }, [dadosFiltrados, agrupamentoDinamica]);
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur sticky top-0 z-50">
@@ -168,7 +196,7 @@ export default function Home() {
                 activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Upload className="w-4 h-4" /> 1. Upload de Arquivos
+              <Upload className="w-4 h-4" /> 1. Upload
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -176,7 +204,15 @@ export default function Home() {
                 activeTab === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Database className="w-4 h-4" /> 2. Painel Consolidado & Filtros
+              <Database className="w-4 h-4" /> 2. Base Consolidada
+            </button>
+            <button
+              onClick={() => setActiveTab('dinamica')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                activeTab === 'dinamica' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
+              }`}
+            >
+              <LayoutDashboard className="w-4 h-4" /> 3. Tabela Dinâmica
             </button>
           </nav>
         </div>
@@ -187,7 +223,7 @@ export default function Home() {
           <form onSubmit={processarArquivos} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão dos Relatórios (Shop9 & Tiny)</h1>
-              <p className="text-slate-400 mt-1">Carregue os TXTs do Shop9 e os XLS do Tiny ERP para gerar o painel estruturado.</p>
+              <p className="text-slate-400 mt-1">Carregue os arquivos para alimentar o painel e a tabela dinâmica.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -195,9 +231,8 @@ export default function Home() {
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.1 do Manual</div>
                   <h3 className="text-lg font-bold text-white mb-2">Estoque Shop9 (.txt)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Relatório de estoque de todas as filiais.</p>
                 </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
                   <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 || 'Selecionar Estoque Shop9 (.txt)'}</span>
                   <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
@@ -207,9 +242,8 @@ export default function Home() {
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 1.2 do Manual</div>
                   <h3 className="text-lg font-bold text-white mb-2">Vendas Shop9 (.txt)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Movimentação de vendas das filiais.</p>
                 </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
                   <span className="text-xs font-medium text-slate-300">{fileVendasShop9 || 'Selecionar Vendas Shop9 (.txt)'}</span>
                   <input type="file" accept=".txt,.xlsx,.xls,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
@@ -219,9 +253,8 @@ export default function Home() {
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 2 do Manual</div>
                   <h3 className="text-lg font-bold text-white mb-2">Estoque Saldo (Tiny ERP)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Saldos de estoque Geral e FBA Amazon.</p>
                 </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
                   <span className="text-xs font-medium text-slate-300">{fileEstoqueTiny || 'Selecionar saldos-em-estoque.xls'}</span>
                   <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
@@ -231,9 +264,8 @@ export default function Home() {
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Passo 3 do Manual</div>
                   <h3 className="text-lg font-bold text-white mb-2">Vendas Notas Fiscais (Tiny ERP)</h3>
-                  <p className="text-xs text-slate-400 mb-4">Notas fiscais emitidas de e-commerce.</p>
                 </div>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate">
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
                   <span className="text-xs font-medium text-slate-300">{fileVendasTiny || 'Selecionar relatorio-de-vendas.xls'}</span>
                   <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0]?.name || '')} className="hidden" />
                 </label>
@@ -250,16 +282,16 @@ export default function Home() {
                 disabled={loading}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Processando Bases...' : 'Processar & Gerar Painel'} <ArrowRight className="w-4 h-4" />
+                {loading ? 'Processando Bases...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
-        ) : (
+        ) : activeTab === 'dashboard' ? (
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-white">Painel Consolidado de Compras</h1>
-                <p className="text-slate-400 mt-1">Exibindo todas as colunas e métricas exatas da planilha oficial.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada de Dados</h1>
+                <p className="text-slate-400 mt-1">Todas as colunas oficiais e filtros individuais ativos.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
@@ -269,7 +301,7 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Filtros Individuais Completos */}
+            {/* Filtros */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Buscar Produto / Código</label>
@@ -305,44 +337,16 @@ export default function Home() {
                   {classesUnicas.map((c, idx) => <option key={idx} value={c}>{c}</option>)}
                 </select>
               </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Família</label>
-                <select value={filtroFamilia} onChange={(e) => setFiltroFamilia(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  {familiasUnicas.map((fam, idx) => <option key={idx} value={fam}>{fam}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Gênero</label>
-                <select value={filtroGenero} onChange={(e) => setFiltroGenero(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  {generosUnicos.map((gen, idx) => <option key={idx} value={gen}>{gen}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Cor</label>
-                <select value={filtroCor} onChange={(e) => setFiltroCor(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  {coresUnicas.map((cor, idx) => <option key={idx} value={cor}>{cor}</option>)}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">Fornecedor</label>
-                <select value={filtroFornecedor} onChange={(e) => setFiltroFornecedor(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  {fornecedoresUnicos.map((forn, idx) => <option key={idx} value={forn}>{forn}</option>)}
-                </select>
-              </div>
             </div>
 
-            {/* Tabela Completa com Todas as Colunas Oficiais */}
+            {/* Tabela Completa */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                  <Database className="w-4 h-4 text-indigo-400" /> Base Consolidada ({dadosFiltrados.length} registros)
+                  <Database className="w-4 h-4 text-indigo-400" /> Registros ({dadosFiltrados.length})
                 </h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Espelhamento Oficial Completo Ativo
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados em Memória Temporária
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
@@ -354,13 +358,10 @@ export default function Home() {
                       <th className="p-3">Código</th>
                       <th className="p-3">Produto</th>
                       <th className="p-3">Filial</th>
-                      <th className="p-3">Cod Cor</th>
                       <th className="p-3">Cor</th>
-                      <th className="p-3">Cod Tamanho</th>
                       <th className="p-3">Tamanho</th>
                       <th className="p-3">Genero</th>
                       <th className="p-3">Marca</th>
-                      <th className="p-3">Codigo_Barras</th>
                       <th className="p-3">Classe</th>
                       <th className="p-3">Familia</th>
                       <th className="p-3">Fornecedor</th>
@@ -371,14 +372,6 @@ export default function Home() {
                       <th className="p-3">PDV Loja</th>
                       <th className="p-3">Margem E-c</th>
                       <th className="p-3">PDV E-c</th>
-                      <th className="p-3">MAI QTT</th>
-                      <th className="p-3">MAI VALOR</th>
-                      <th className="p-3">JUN QTT</th>
-                      <th className="p-3">JUN VALOR</th>
-                      <th className="p-3">JUL QTT</th>
-                      <th className="p-3">JUL VALOR</th>
-                      <th className="p-3">VENDA GERAL ITENS</th>
-                      <th className="p-3">VENDA GERAL VALOR</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
@@ -389,13 +382,10 @@ export default function Home() {
                         <td className="p-3 font-mono">{item.codigo}</td>
                         <td className="p-3 font-medium text-white">{item.produto}</td>
                         <td className="p-3">{item.filial}</td>
-                        <td className="p-3">{item.codCor}</td>
                         <td className="p-3 text-slate-300">{item.cor}</td>
-                        <td className="p-3">{item.codTamanho}</td>
                         <td className="p-3 text-slate-300">{item.tamanho}</td>
                         <td className="p-3 text-slate-400">{item.genero}</td>
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
-                        <td className="p-3 text-slate-500 font-mono">{item.codigoBarras}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
                         <td className="p-3 text-slate-400">{item.familia}</td>
                         <td className="p-3 text-slate-400">{item.fornecedor}</td>
@@ -406,16 +396,74 @@ export default function Home() {
                         <td className="p-3 text-slate-300">R$ {item.pdvLoja.toFixed(2)}</td>
                         <td className="p-3 text-emerald-400 font-medium">{(item.margemEc * 100).toFixed(1)}%</td>
                         <td className="p-3 text-slate-300">R$ {item.pdvEc.toFixed(2)}</td>
-                        <td className="p-3">{item.maiQtt}</td>
-                        <td className="p-3 text-slate-300">R$ {item.maiValor.toFixed(2)}</td>
-                        <td className="p-3">{item.junQtt}</td>
-                        <td className="p-3 text-slate-300">R$ {item.junValor.toFixed(2)}</td>
-                        <td className="p-3">{item.julQtt}</td>
-                        <td className="p-3 text-slate-300">R$ {item.julValor.toFixed(2)}</td>
-                        <td className="p-3 font-bold text-indigo-300">{item.vendaGeralItens}</td>
-                        <td className="p-3 text-indigo-300">R$ {item.vendaGeralValor.toFixed(2)}</td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ABA 3: TABELA DINÂMICA INTERATIVA */
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h1 className="text-3xl font-bold tracking-tight text-white">Tabela Dinâmica Interativa</h1>
+                <p className="text-slate-400 mt-1">Agrupe e analise os dados temporários em memória.</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-slate-400 font-medium">Agrupar por:</label>
+                <select 
+                  value={agrupamentoDinamica} 
+                  onChange={(e) => setAgrupamentoDinamica(e.target.value as any)}
+                  className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="marca">Marca</option>
+                  <option value="classe">Classe</option>
+                  <option value="familia">Família</option>
+                  <option value="filial">Filial</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
+              <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <LayoutDashboard className="w-4 h-4 text-indigo-400" /> Visão Dinâmica por {agrupamentoDinamica.toUpperCase()}
+                </h3>
+                <span className="text-xs text-indigo-400 font-medium">{dadosDinamica.length} grupos encontrados</span>
+              </div>
+              <div className="overflow-x-auto max-h-[550px]">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="bg-slate-950/90 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
+                    <tr>
+                      <th className="p-4">Rótulos de Linha</th>
+                      <th className="p-4">Qtd. Registros</th>
+                      <th className="p-4">Soma de Estoque</th>
+                      <th className="p-4">Custo Total (R$)</th>
+                      <th className="p-4">Venda Geral (Itens)</th>
+                      <th className="p-4">Venda Geral (Valor)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/50">
+                    {dadosDinamica.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} className="p-8 text-center text-slate-500">
+                          Nenhum dado disponível. Faça o upload dos arquivos na primeira aba.
+                        </td>
+                      </tr>
+                    ) : (
+                      dadosDinamica.map((row, index) => (
+                        <tr key={index} className="hover:bg-slate-800/30 transition-colors font-medium">
+                          <td className="p-4 text-white font-semibold">{row.rotulo}</td>
+                          <td className="p-4 text-slate-300">{row.count}</td>
+                          <td className="p-4 text-emerald-400 font-bold">{row.estoque} un</td>
+                          <td className="p-4 text-slate-300">R$ {row.custoTotal.toFixed(2)}</td>
+                          <td className="p-4 text-indigo-300">{row.vendasItens}</td>
+                          <td className="p-4 text-indigo-300">R$ {row.vendasValor.toFixed(2)}</td>
+                        </tr>
+                      ))
+                    )}
                   </tbody>
                 </table>
               </div>
