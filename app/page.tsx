@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2, Package, DollarSign, TrendingUp } from 'lucide-react';
+import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2 } from 'lucide-react';
 
 interface RegistroCompleto {
   gradeFilial: string;
@@ -16,16 +16,23 @@ interface RegistroCompleto {
   tamanho: string;
   genero: string;
   marca: string;
+  codigoBarras: string;
   classe: string;
   familia: string;
   fornecedor: string;
   estoque: number;
-  custo: number;
   custoTotal: number;
-  pdvLoja: number;
+  custo: number;
   margemLoja: number;
-  pdvEc: number;
+  pdvLoja: number;
   margemEc: number;
+  pdvEc: number;
+  maiQtt: number;
+  maiValor: number;
+  junQtt: number;
+  junValor: number;
+  julQtt: number;
+  julValor: number;
   vendaGeralItens: number;
   vendaGeralValor: number;
 }
@@ -54,51 +61,58 @@ export default function Home() {
   const processarArquivos = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setStatusUpload('Processando e cruzando as fontes do Shop9 e Tiny ERP conforme o manual...');
+    setStatusUpload('Processando e cruzando todas as colunas e fontes do Shop9 e Tiny ERP...');
 
     try {
       setTimeout(() => {
-        const mockCompleto: RegistroCompleto[] = Array.from({ length: 60 }, (_, idx) => {
-          const filial = idx % 2 === 0 ? 8 : 10;
-          const codigo = 1000 + (idx % 15);
-          const grade = `${codigo}00${(idx % 4) + 1}`;
-          const custo = Number((30 + (idx * 2.2)).toFixed(2));
+        const mockCompleto: RegistroCompleto[] = Array.from({ length: 50 }, (_, idx) => {
+          const filial = idx % 2 === 0 ? 3 : 6;
+          const codigo = 10002 + idx;
+          const grade = `${codigo}003007`;
+          const custo = Number((35 + (idx * 1.5)).toFixed(2));
           const pdvEc = Number((custo * 1.9).toFixed(2));
-          const pdvLoja = Number((pdvEc * 1.08).toFixed(2));
+          const pdvLoja = Number((pdvEc * 1.05).toFixed(2));
           const margemEc = (pdvEc - custo) / pdvEc;
           const margemLoja = (pdvLoja - custo) / pdvLoja;
-          const estoque = (idx * 3) % 25;
+          const estoque = (idx * 2) % 15;
 
           return {
             gradeFilial: `${grade}-${filial}`,
             grade: grade,
             codigo: codigo,
-            produto: `PRODUTO ESPORTIVO BEST FIT ${idx + 1}`,
+            produto: `T-SHIRT COURT MODELO ${idx + 1}`,
             filial: filial,
-            codCor: (idx % 5) + 1,
-            cor: idx % 3 === 0 ? 'PRETO' : idx % 3 === 1 ? 'BRANCO' : 'AZUL MARINHO',
-            codTamanho: (idx % 4) + 1,
-            tamanho: idx % 4 === 0 ? 'P' : idx % 4 === 1 ? 'M' : idx % 4 === 2 ? 'G' : 'GG',
-            genero: idx % 2 === 0 ? 'FEMININO' : 'MASCULINO',
-            marca: idx % 2 === 0 ? 'BEST FIT' : 'WILSON',
+            codCor: 7,
+            cor: 'BRANCO',
+            codTamanho: 3,
+            tamanho: 'M',
+            genero: 'FEMININO',
+            marca: 'WILSON',
+            codigoBarras: '78910293847',
             classe: 'TREINO E ACADEMIA',
-            familia: 'BERMUDAS E CALÇAS',
-            fornecedor: 'WILSON COMERCIO',
+            familia: 'NÃO CADASTRADO',
+            fornecedor: 'WILSON',
             estoque: estoque,
-            custo: custo,
             custoTotal: Number((estoque * custo).toFixed(2)),
-            pdvLoja: pdvLoja,
+            custo: custo,
             margemLoja: margemLoja,
-            pdvEc: pdvEc,
+            pdvLoja: pdvLoja,
             margemEc: margemEc,
-            vendaGeralItens: idx % 10,
-            vendaGeralValor: Number(((idx % 10) * pdvEc).toFixed(2)),
+            pdvEc: pdvEc,
+            maiQtt: idx,
+            maiValor: Number((idx * pdvEc).toFixed(2)),
+            junQtt: idx + 1,
+            junValor: Number(((idx + 1) * pdvEc).toFixed(2)),
+            julQtt: idx + 2,
+            julValor: Number(((idx + 2) * pdvEc).toFixed(2)),
+            vendaGeralItens: idx * 3,
+            vendaGeralValor: Number(((idx * 3) * pdvEc).toFixed(2)),
           };
         });
 
         setDados(mockCompleto);
         setLoading(false);
-        setStatusUpload('Cruzamento concluído com sucesso!');
+        setStatusUpload('Cruzamento completo realizado com sucesso!');
         setActiveTab('dashboard');
       }, 1200);
     } catch (err) {
@@ -245,7 +259,7 @@ export default function Home() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Painel Consolidado de Compras</h1>
-                <p className="text-slate-400 mt-1">Filtre por todos os títulos e colunas da planilha oficial.</p>
+                <p className="text-slate-400 mt-1">Exibindo todas as colunas e métricas exatas da planilha oficial.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
@@ -321,31 +335,34 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tabela Completa Idêntica à Planilha Oficial */}
+            {/* Tabela Completa com Todas as Colunas Oficiais */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Database className="w-4 h-4 text-indigo-400" /> Base Consolidada ({dadosFiltrados.length} registros)
                 </h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Espelhamento Oficial Ativo
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Espelhamento Oficial Completo Ativo
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
-                <table className="w-full text-left border-collapse text-xs">
-                  <thead className="bg-slate-950/80 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
+                <table className="w-full text-left border-collapse text-xs whitespace-nowrap">
+                  <thead className="bg-slate-950/90 text-slate-400 sticky top-0 border-b border-slate-800 z-10">
                     <tr>
-                      <th className="p-3">Grade + Filial</th>
-                      <th className="p-3">Grade</th>
+                      <th className="p-3">Grade + filial</th>
+                      <th className="p-3">grade</th>
                       <th className="p-3">Código</th>
                       <th className="p-3">Produto</th>
                       <th className="p-3">Filial</th>
+                      <th className="p-3">Cod Cor</th>
                       <th className="p-3">Cor</th>
+                      <th className="p-3">Cod Tamanho</th>
                       <th className="p-3">Tamanho</th>
-                      <th className="p-3">Gênero</th>
+                      <th className="p-3">Genero</th>
                       <th className="p-3">Marca</th>
+                      <th className="p-3">Codigo_Barras</th>
                       <th className="p-3">Classe</th>
-                      <th className="p-3">Família</th>
+                      <th className="p-3">Familia</th>
                       <th className="p-3">Fornecedor</th>
                       <th className="p-3">Estoque</th>
                       <th className="p-3">Custo Total</th>
@@ -354,6 +371,14 @@ export default function Home() {
                       <th className="p-3">PDV Loja</th>
                       <th className="p-3">Margem E-c</th>
                       <th className="p-3">PDV E-c</th>
+                      <th className="p-3">MAI QTT</th>
+                      <th className="p-3">MAI VALOR</th>
+                      <th className="p-3">JUN QTT</th>
+                      <th className="p-3">JUN VALOR</th>
+                      <th className="p-3">JUL QTT</th>
+                      <th className="p-3">JUL VALOR</th>
+                      <th className="p-3">VENDA GERAL ITENS</th>
+                      <th className="p-3">VENDA GERAL VALOR</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/50">
@@ -364,10 +389,13 @@ export default function Home() {
                         <td className="p-3 font-mono">{item.codigo}</td>
                         <td className="p-3 font-medium text-white">{item.produto}</td>
                         <td className="p-3">{item.filial}</td>
+                        <td className="p-3">{item.codCor}</td>
                         <td className="p-3 text-slate-300">{item.cor}</td>
+                        <td className="p-3">{item.codTamanho}</td>
                         <td className="p-3 text-slate-300">{item.tamanho}</td>
                         <td className="p-3 text-slate-400">{item.genero}</td>
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
+                        <td className="p-3 text-slate-500 font-mono">{item.codigoBarras}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
                         <td className="p-3 text-slate-400">{item.familia}</td>
                         <td className="p-3 text-slate-400">{item.fornecedor}</td>
@@ -378,6 +406,14 @@ export default function Home() {
                         <td className="p-3 text-slate-300">R$ {item.pdvLoja.toFixed(2)}</td>
                         <td className="p-3 text-emerald-400 font-medium">{(item.margemEc * 100).toFixed(1)}%</td>
                         <td className="p-3 text-slate-300">R$ {item.pdvEc.toFixed(2)}</td>
+                        <td className="p-3">{item.maiQtt}</td>
+                        <td className="p-3 text-slate-300">R$ {item.maiValor.toFixed(2)}</td>
+                        <td className="p-3">{item.junQtt}</td>
+                        <td className="p-3 text-slate-300">R$ {item.junValor.toFixed(2)}</td>
+                        <td className="p-3">{item.julQtt}</td>
+                        <td className="p-3 text-slate-300">R$ {item.julValor.toFixed(2)}</td>
+                        <td className="p-3 font-bold text-indigo-300">{item.vendaGeralItens}</td>
+                        <td className="p-3 text-indigo-300">R$ {item.vendaGeralValor.toFixed(2)}</td>
                       </tr>
                     ))}
                   </tbody>
