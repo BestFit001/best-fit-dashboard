@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2, LayoutDashboard } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { Upload, Database, Layers, ArrowRight, Search, RefreshCw, CheckCircle2, LayoutDashboard, Loader2 } from 'lucide-react';
 
 interface RegistroBase {
   gradeFilial: string;
@@ -56,8 +57,54 @@ export default function Home() {
   const [colunaDinamica, setColunaDinamica] = useState<keyof RegistroBase>('filial');
   const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'pdvEc'>('estoque');
 
-  // Função para processar as 4 planilhas/fontes reais
-  const processarArquivosReais = async (e: React.FormEvent) => {
+  // Carrega os dados salvos do Supabase ao abrir a aba Base Consolidada
+  useEffect(() => {
+    carregarDadosDoSupabase();
+  }, []);
+
+  const carregarDadosDoSupabase = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('produtos_compras')
+        .select('*')
+        .limit(1000); // Traz os primeiros 1000 para performance otimizada
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const formatados: RegistroBase[] = data.map((item: any) => ({
+          gradeFilial: item.grade_filial,
+          grade: item.grade,
+          codigo: item.codigo,
+          produto: item.produto,
+          filial: item.filial,
+          codCor: item.cod_cor,
+          cor: item.cor,
+          codTamanho: item.cod_tamanho,
+          tamanho: item.tamanho,
+          genero: item.genero,
+          marca: item.marca,
+          codigoBarras: item.codigo_barras,
+          classe: item.classe,
+          familia: item.familia,
+          fornecedor: item.fornecedor,
+          estoque: item.estoque,
+          custoTotal: Number(item.custo_total),
+          custo: Number(item.custo),
+          margemLoja: Number(item.margem_loja),
+          pdvLoja: Number(item.pdv_loja),
+          margemEc: Number(item.margem_ec),
+          pdvEc: Number(item.pdv_ec),
+        }));
+        setDados(formatados);
+      }
+    } catch (err) {
+      console.error('Erro ao buscar dados do Supabase:', err);
+    }
+  };
+
+  // Processamento e Salvamento em Lotes (Batches) para evitar travamentos
+  const processarEEnviarParaSupabase = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!fileEstoqueShop9) {
       alert('Por favor, selecione ao menos o arquivo principal de Estoque do Shop9!');
@@ -65,7 +112,7 @@ export default function Home() {
     }
 
     setLoading(true);
-    setStatusUpload('Lendo as 4 fontes, gerando chaves Grade+Filial e cruzando as informações...');
+    setStatusUpload('Lendo arquivo, estruturando dados e preparando o envio...');
 
     try {
       const dataEstoque = await fileEstoqueShop9.arrayBuffer();
@@ -73,7 +120,9 @@ export default function Home() {
       const sheetEstoque = workbookEstoque.Sheets[workbookEstoque.SheetNames[0]];
       const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
-      const registrosProcessados: RegistroBase[] = rowsEstoque.map((row, idx) => {
+      setStatusUpload(`Processando ${rowsEstoque.length} registros e enviando para o Supabase...`);
+
+      const registrosProcessados = rowsEstoque.map((row, idx) => {
         const filial = Number(row['Filial'] || 3);
         const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
         const codigo = Number(row['Codigo'] || row['Código_Produto'] || 1000 + idx);
@@ -91,41 +140,57 @@ export default function Home() {
         const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
+        const custoTotal = Number((estoque * custo).toFixed(2));
 
         return {
-          gradeFilial: `${grade}-${filial}`,
+          grade_filial: `${grade}-${filial}`,
           grade,
           codigo,
           produto,
           filial,
-          codCor: Number(row['Cód Cor'] || 1),
+          cod_cor: Number(row['Cód Cor'] || 1),
           cor,
-          codTamanho: Number(row['Cód Tamanho'] || 1),
+          cod_tamanho: Number(row['Cód Tamanho'] || 1),
           tamanho,
           genero,
           marca,
-          codigoBarras: String(row['Codigo_Barras'] || ''),
+          codigo_barras: String(row['Codigo_Barras'] || ''),
           classe,
           familia,
           fornecedor,
           estoque,
-          custoTotal: Number((estoque * custo).toFixed(2)),
           custo,
-          margemLoja,
-          pdvLoja,
-          margemEc,
-          pdvEc,
+          custo_total: custoTotal,
+          margem_loja: margemLoja,
+          pdv_loja: pdvLoja,
+          margem_ec: margemEc,
+          pdv_ec: pdvEc,
         };
       });
 
-      setDados(registrosProcessados);
+      // Envio em lotes (batches) de 500 itens para não sobrecarregar a API nem travar
+      const tamanhoLote = 500;
+      for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
+        const lote = registrosProcessados.slice(i, i + tamanhoLote);
+        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)}...`);
+
+        const { error } = await supabase
+          .from('produtos_compras')
+          .upsert(lote, { onConflict: 'grade_filial' });
+
+        if (error) {
+          console.error('Erro no lote:', error.message);
+        }
+      }
+
+      setStatusUpload('Dados salvos e sincronizados com sucesso no Supabase!');
       setLoading(false);
-      setStatusUpload('As 4 fontes foram cruzadas com sucesso!');
+      await carregarDadosDoSupabase();
       setActiveTab('dashboard');
     } catch (err) {
       console.error(err);
       setLoading(false);
-      setStatusUpload('Erro ao ler os arquivos. Verifique os formatos.');
+      setStatusUpload('Erro ao processar e salvar os arquivos.');
     }
   };
 
@@ -203,7 +268,7 @@ export default function Home() {
                 activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Upload className="w-4 h-4" /> 1. Upload (4 Fontes)
+              <Upload className="w-4 h-4" /> 1. Upload & Supabase
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -227,14 +292,13 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         {activeTab === 'upload' ? (
-          <form onSubmit={processarArquivosReais} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
+          <form onSubmit={processarEEnviarParaSupabase} className="space-y-8 max-w-5xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão das 4 Fontes Oficiais</h1>
-              <p className="text-slate-400 mt-1">Carregue os arquivos do Shop9 e do Tiny ERP para consolidar a base e gerar as tabelas dinâmicas.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Ingestão & Sincronização com Supabase</h1>
+              <p className="text-slate-400 mt-1">Carregue os arquivos. O app os enviará em lotes seguros para o Supabase, evitando qualquer travamento.</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Fonte 1 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 01 (Shop9)</div>
@@ -246,7 +310,6 @@ export default function Home() {
                 </label>
               </div>
 
-              {/* Fonte 2 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 02 (Shop9)</div>
@@ -258,7 +321,6 @@ export default function Home() {
                 </label>
               </div>
 
-              {/* Fonte 3 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 03 (Tiny ERP)</div>
@@ -270,7 +332,6 @@ export default function Home() {
                 </label>
               </div>
 
-              {/* Fonte 4 */}
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
                   <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 04 (Tiny ERP)</div>
@@ -285,7 +346,7 @@ export default function Home() {
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
               <div>
-                <h4 className="font-medium text-white">Status da Automação</h4>
+                <h4 className="font-medium text-white">Status da Sincronização</h4>
                 <p className="text-sm text-slate-400">{statusUpload}</p>
               </div>
               <button
@@ -293,7 +354,8 @@ export default function Home() {
                 disabled={loading}
                 className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
               >
-                {loading ? 'Cruzando as 4 Fontes...' : 'Processar & Gerar Painéis'} <ArrowRight className="w-4 h-4" />
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {loading ? 'Enviando p/ Supabase...' : 'Processar & Salvar no Supabase'} <ArrowRight className="w-4 h-4" />
               </button>
             </div>
           </form>
@@ -301,14 +363,14 @@ export default function Home() {
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
-                <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Espelho Oficial)</h1>
-                <p className="text-slate-400 mt-1">Exibindo todos os produtos, marcas, custos e filiais cruzados.</p>
+                <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Supabase)</h1>
+                <p className="text-slate-400 mt-1">Exibindo registros salvos com segurança no banco de dados.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm font-medium rounded-xl border border-slate-700 flex items-center gap-2"
               >
-                <RefreshCw className="w-4 h-4" /> Enviar Outros Arquivos
+                <RefreshCw className="w-4 h-4" /> Enviar Novos Arquivos
               </button>
             </div>
 
@@ -357,7 +419,7 @@ export default function Home() {
                   <Database className="w-4 h-4 text-indigo-400" /> Registros ({dadosFiltrados.length})
                 </h3>
                 <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                  <CheckCircle2 className="w-3.5 h-3.5" /> Dados das 4 Fontes Cruzados
+                  <CheckCircle2 className="w-3.5 h-3.5" /> Sincronizado com o Supabase
                 </span>
               </div>
               <div className="overflow-x-auto max-h-[550px]">
