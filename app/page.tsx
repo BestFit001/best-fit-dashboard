@@ -120,7 +120,7 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 1. Processamento de Estoque E-commerce / Tiny (Coluna A = Grade SKU, Coluna C = Estoque Físico) -> Exclusivo Filial 8
+      // 1. Processamento de Estoque E-commerce / Tiny (Coluna A = Grade SKU, Coluna C = Estoque Físico)
       const mapaEstoqueEc: { [grade: string]: number } = {};
       if (fileEstoqueTiny) {
         setStatusUpload(`Lendo saldos de estoque E-commerce (${fileEstoqueTiny.name})...`);
@@ -131,8 +131,8 @@ export default function Home() {
 
         rowsTiny.forEach((r: any[]) => {
           if (r && r.length >= 3) {
-            const gradeSku = String(r[0] || '').trim(); // Coluna A (SKU/Grade)
-            const qtdEstoqueEc = Number(r[2] || 0);     // Coluna C (Estoque físico)
+            const gradeSku = String(r[0] || '').trim();
+            const qtdEstoqueEc = Number(r[2] || 0);
             if (gradeSku && gradeSku.toLowerCase() !== 'código (sku)' && !isNaN(qtdEstoqueEc)) {
               mapaEstoqueEc[gradeSku] = (mapaEstoqueEc[gradeSku] || 0) + qtdEstoqueEc;
             }
@@ -140,11 +140,10 @@ export default function Home() {
         });
       }
 
-      // 2. Dicionários de Vendas Separados para Lojas e E-commerce
-      const vendasLojas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
-      const vendasEc: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
+      // 2. Dicionários de Vendas Separados e Robustos
+      const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
 
-      // Leitura Vendas Filiais (Shop9 - Lojas)
+      // Vendas Lojas (Shop9)
       if (fileVendasShop) {
         setStatusUpload(`Lendo relatório de vendas Filiais (${fileVendasShop.name})...`);
         const bufVendasShop = await fileVendasShop.arrayBuffer();
@@ -161,17 +160,17 @@ export default function Home() {
           const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
           const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
 
-          if (!vendasLojas[chave]) vendasLojas[chave] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
-          vendasLojas[chave].qtd += qtd;
-          vendasLojas[chave].valor += val;
+          if (!mapaVendas[chave]) mapaVendas[chave] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+          mapaVendas[chave].qtd += qtd;
+          mapaVendas[chave].valor += val;
           if (pdvUnitario > 0) {
-            vendasLojas[chave].somaPdv += pdvUnitario;
-            vendasLojas[chave].countPdv += 1;
+            mapaVendas[chave].somaPdv += pdvUnitario;
+            mapaVendas[chave].countPdv += 1;
           }
         });
       }
 
-      // Leitura Vendas E-commerce (Tiny - Filial 8)
+      // Vendas E-commerce (Tiny - Filial 8)
       if (fileVendasTiny) {
         setStatusUpload(`Lendo relatório de vendas E-commerce (${fileVendasTiny.name})...`);
         const bufVendasTiny = await fileVendasTiny.arrayBuffer();
@@ -181,18 +180,18 @@ export default function Home() {
 
         rowsVendasTiny.forEach((rv, idx) => {
           const grade = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
-          const chaveEc = `${grade}-8`; // Exclusivo Filial 8
+          const chaveEc = `${grade}-8`;
           
           const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
           const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
           const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
 
-          if (!vendasEc[chaveEc]) vendasEc[chaveEc] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
-          vendasEc[chaveEc].qtd += qtd;
-          vendasEc[chaveEc].valor += val;
+          if (!mapaVendas[chaveEc]) mapaVendas[chaveEc] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+          mapaVendas[chaveEc].qtd += qtd;
+          mapaVendas[chaveEc].valor += val;
           if (pdvUnitario > 0) {
-            vendasEc[chaveEc].somaPdv += pdvUnitario;
-            vendasEc[chaveEc].countPdv += 1;
+            mapaVendas[chaveEc].somaPdv += pdvUnitario;
+            mapaVendas[chaveEc].countPdv += 1;
           }
         });
       }
@@ -205,7 +204,6 @@ export default function Home() {
       const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
       const registrosProcessados: any[] = [];
-      const gradesShop9 = new Set<string>();
 
       rowsEstoque.forEach((row, idx) => {
         const filial = Number(row['Filial'] || row['Depósito'] || 3);
@@ -225,7 +223,7 @@ export default function Home() {
         const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
         const custo = Number(row['Preco'] || row['Custo'] || 0);
         
-        const vendaInfo = vendasLojas[gradeFilial] || { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+        const vendaInfo = mapaVendas[gradeFilial] || { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
         const mediaPdvEc = vendaInfo.countPdv > 0 ? vendaInfo.somaPdv / vendaInfo.countPdv : 0;
 
         const pdvEc = Number(row['Preco1'] || row['Preço'] || (mediaPdvEc > 0 ? mediaPdvEc : custo * 1.9));
@@ -233,8 +231,6 @@ export default function Home() {
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
         const custoTotal = Number((estoque * custo).toFixed(2));
-
-        gradesShop9.add(grade);
 
         registrosProcessados.push({
           data_referencia: dataEnvio,
@@ -262,7 +258,7 @@ export default function Home() {
         });
       });
 
-      // 4. Acréscimo isolado da FILIAL 8 (E-commerce)
+      // 4. Inclusão da Filial 8 (E-commerce) com base no Tiny ERP
       Object.entries(mapaEstoqueEc).forEach(([grade, estoqueEc]) => {
         const gradeFilialEc = `${grade}-8`;
         const template = rowsEstoque.find(r => String(r['Grade'] || r['Código_da_Grade']) === grade) || rowsEstoque[0];
@@ -281,7 +277,7 @@ export default function Home() {
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const custoTotalEc = Number((estoqueEc * custo).toFixed(2));
 
-        const vendaInfoEc = vendasEc[gradeFilialEc] || { qtd: 0, valor: 0 };
+        const vendaInfoEc = mapaVendas[gradeFilialEc] || { qtd: 0, valor: 0 };
 
         registrosProcessados.push({
           data_referencia: dataEnvio,
@@ -289,7 +285,7 @@ export default function Home() {
           grade,
           codigo,
           produto,
-          filial: 8, // Filial 8 isolada
+          filial: 8, // Filial 8 limpa
           cor,
           tamanho,
           genero,
@@ -487,7 +483,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data e envie todos os relatórios para integrar filiais físicas e a Filial 8 separadamente.</p>
+              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos de loja e e-commerce para gerar a Filial 8 mantendo as filiais físicas.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
