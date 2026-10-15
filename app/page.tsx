@@ -23,6 +23,9 @@ interface RegistroBase {
   estoque: number;
   custoTotal: number;
   custo: number;
+  margemLoja: number;
+  pdvLoja: number;
+  margemEc: number;
   pdvEc: number;
 }
 
@@ -85,6 +88,9 @@ export default function Home() {
           estoque: item.estoque || 0,
           custoTotal: Number(item.custo_total || 0),
           custo: Number(item.custo || 0),
+          margemLoja: Number(item.margem_loja || 0),
+          pdvLoja: Number(item.pdv_loja || 0),
+          margemEc: Number(item.margem_ec || 0),
           pdvEc: Number(item.pdv_ec || 0),
         }));
         setDados(formatados);
@@ -124,15 +130,6 @@ export default function Home() {
         const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-        // LOG DE DIAGNÓSTICO: Mostra no F12 do navegador as chaves reais detectadas na planilha
-        console.log(`=== DIRECIONAMENTO DE COLUNAS (${item.file!.name}) ===`);
-        if (rows.length > 0) {
-          console.log('Chaves (Colunas) encontradas:', Object.keys(rows[0]));
-          console.log('Exemplo da 1ª linha:', rows[0]);
-        } else {
-          console.warn('A planilha retornou 0 linhas válidas!');
-        }
-
         setStatusUpload(`Processando ${rows.length} registros de ${item.file!.name}...`);
 
         const registrosProcessados = rows.map((row, idx) => {
@@ -142,14 +139,19 @@ export default function Home() {
           const produto = String(row['Produto'] || row['Nome_Produto'] || row['Descrição'] || 'PRODUTO NÃO CADASTRADO');
           const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
           const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
-          const genero = String(row['Genero'] || 'NÃO CADASTRADO');
+          const genero = String(row['Genero'] || row['Gênero'] || 'NÃO CADASTRADO');
           const marca = String(row['Marca'] || 'NÃO CADASTRADO');
           const classe = String(row['Classe'] || 'NÃO CADASTRADO');
-          const familia = String(row['Familia'] || 'NÃO CADASTRADO');
+          const familia = String(row['Familia'] || row['Família'] || 'NÃO CADASTRADO');
           const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
           const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
-          const custo = Number(row['Preco'] || row['Preco_Total'] || row['Custo'] || 0);
+          
+          // Mapeamento de Custos e Preços conforme a planilha de referência
+          const custo = Number(row['Preco'] || row['Preco_Total'] || row['Custo'] || 50.0);
           const pdvEc = Number(row['Preco1'] || row['Preço'] || (custo * 1.9));
+          const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
+          const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
+          const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
           const custoTotal = Number((estoque * custo).toFixed(2));
 
           return {
@@ -169,6 +171,9 @@ export default function Home() {
             estoque,
             custo,
             custo_total: custoTotal,
+            margem_loja: margemLoja,
+            pdv_loja: pdvLoja,
+            margem_ec: margemEc,
             pdv_ec: pdvEc,
           };
         });
@@ -484,6 +489,7 @@ export default function Home() {
                       <th className="p-3">Gênero</th>
                       <th className="p-3">Marca</th>
                       <th className="p-3">Classe</th>
+                      <th className="p-3">Família</th>
                       <th className="p-3">Estoque</th>
                       <th className="p-3">Custo Total</th>
                       <th className="p-3">PDV E-c</th>
@@ -502,6 +508,7 @@ export default function Home() {
                         <td className="p-3 text-slate-400">{item.genero}</td>
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
+                        <td className="p-3 text-slate-400">{item.familia}</td>
                         <td className="p-3 font-bold text-white">{item.estoque}</td>
                         <td className="p-3 text-slate-300">R$ {item.custoTotal.toFixed(2)}</td>
                         <td className="p-3 text-slate-300">R$ {item.pdvEc.toFixed(2)}</td>
