@@ -120,27 +120,27 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 1. Processamento de Estoque E-commerce / Tiny (Coluna A = Grade/SKU, Coluna C = Estoque)
+      // 1. Processamento de Estoque E-commerce / Tiny (Lendo Coluna A para Grade e Coluna C para Estoque)
       const mapaEstoqueEc: { [grade: string]: number } = {};
       if (fileEstoqueTiny) {
         setStatusUpload(`Lendo saldos de estoque E-commerce (${fileEstoqueTiny.name})...`);
         const bufTiny = await fileEstoqueTiny.arrayBuffer();
         const wbTiny = XLSX.read(bufTiny, { type: 'array' });
         const shTiny = wbTiny.Sheets[wbTiny.SheetNames[0]];
-        const rowsTiny: any[] = XLSX.utils.sheet_to_json(shTiny, { header: 1 }); // Array of arrays para pegar por índice de coluna (A=0, C=2)
+        const rowsTiny: any[] = XLSX.utils.sheet_to_json(shTiny, { header: 1 });
 
         rowsTiny.forEach((r: any[]) => {
           if (r && r.length >= 3) {
             const gradeSku = String(r[0] || '').trim(); // Coluna A (SKU/Grade)
-            const qtdEstoqueEc = Number(r[2] || 0);     // Coluna C (Unidades de Estoque)
-            if (gradeSku) {
+            const qtdEstoqueEc = Number(r[2] || 0);     // Coluna C (Estoque físico)
+            if (gradeSku && !isNaN(qtdEstoqueEc)) {
               mapaEstoqueEc[gradeSku] = (mapaEstoqueEc[gradeSku] || 0) + qtdEstoqueEc;
             }
           }
         });
       }
 
-      // 2. Processamento de Vendas (Mapeando Colunas I, J, K / Qtde_Vendida / Preco_Total / Preco_Médio e Média E-commerce)
+      // 2. Processamento de Vendas (Mapeamento flexível para capturar quantidade, valor e preço médio)
       const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
       const arquivosVendas = [fileVendasShop, fileVendasTiny].filter(Boolean) as File[];
 
@@ -152,13 +152,13 @@ export default function Home() {
         const rowsVendas: any[] = XLSX.utils.sheet_to_json(shVendas);
 
         rowsVendas.forEach((rv, idx) => {
-          const f = Number(rv['Filial'] || rv['Depósito'] || 3);
-          const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || `1000${idx}`);
+          const f = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || 3);
+          const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
           const k = `${g}-${f}`;
           
-          const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || 0);
-          const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || 0);
-          const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || (qtd > 0 ? val / qtd : 0));
+          const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
+          const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
+          const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
 
           if (!mapaVendas[k]) mapaVendas[k] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
           mapaVendas[k].qtd += qtd;
@@ -192,7 +192,7 @@ export default function Home() {
         const familia = String(row['Familia'] || row['Família'] || 'Não Cadastrado');
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
         
-        // Estoque Loja + Estoque E-commerce (Tiny coluna C com base na Grade SKU)
+        // Estoque Loja + Estoque E-commerce (Tiny Coluna C com base na Grade SKU Coluna A)
         const estoqueLoja = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
         const estoqueEc = mapaEstoqueEc[grade] || 0;
         const estoqueTotal = estoqueLoja + estoqueEc;
