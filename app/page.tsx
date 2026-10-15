@@ -522,7 +522,7 @@ export default function Home() {
                               totalLinha += val;
                               return (
                                 <td key={cIdx} className="p-4 text-center text-slate-300 border-r border-slate-800">
-                                  {metricaDinamica.includes('custo') || metricaDinomica?.includes('pdv') || metricaDinamica.includes('pdv')
+                                  {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv')
                                     ? `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
                                     : `${val.toLocaleString('pt-BR')} un`}
                                 </td>
