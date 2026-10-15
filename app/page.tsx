@@ -32,7 +32,7 @@ export default function Home() {
   const [statusUpload, setStatusUpload] = useState('Selecione a data e o arquivo de estoque.');
 
   // Estados de Upload
-  const [dataEnvio, setDataEnvio] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [dataEnvio, setDataEnvio] = useState<string>('');
   const [fileEstoque, setFileEstoque] = useState<File | null>(null);
 
   // Filtros da Base Consolidada
@@ -48,6 +48,7 @@ export default function Home() {
   const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'pdvEc'>('estoque');
 
   useEffect(() => {
+    setDataEnvio(new Date().toISOString().split('T')[0]);
     carregarDadosDoSupabase();
   }, []);
 
@@ -172,7 +173,6 @@ export default function Home() {
     }
   };
 
-  // Funções de Limpeza de Dados
   const apagarBaseInteira = async () => {
     if (!confirm('Tem certeza que deseja apagar TODOS os registros da base do Supabase?')) return;
     setLoading(true);
@@ -479,7 +479,7 @@ export default function Home() {
                 </div>
                 <div>
                   <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores:</label>
-                  <select value={metricaDinamica} onChange={(e) => metricaDinamica && setMetricaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
+                  <select value={metricaDinamica} onChange={(e) => setMetricaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
                     <option value="estoque">Soma de Estoque</option>
                     <option value="custoTotal">Soma de Custo Total</option>
                     <option value="pdvEc">Soma de PDV E-commerce</option>
@@ -522,7 +522,7 @@ export default function Home() {
                               totalLinha += val;
                               return (
                                 <td key={cIdx} className="p-4 text-center text-slate-300 border-r border-slate-800">
-                                  {metricaDinamica.includes('custo') || metricaDinamica.includes('pdv')
+                                  {metricaDinamica.includes('custo') || metricaDinomica?.includes('pdv') || metricaDinamica.includes('pdv')
                                     ? `R$ ${val.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
                                     : `${val.toLocaleString('pt-BR')} un`}
                                 </td>
