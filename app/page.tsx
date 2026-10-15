@@ -140,7 +140,7 @@ export default function Home() {
         });
       }
 
-      // 2. Processamento de Vendas
+      // 2. Processamento de Vendas (Mapeando Coluna C para SKU, Coluna I para Qtd, Coluna J para Valor, Coluna K para PDV)
       const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
       const arquivosVendas = [fileVendasShop, fileVendasTiny].filter(Boolean) as File[];
 
@@ -153,9 +153,11 @@ export default function Home() {
 
         rowsVendas.forEach((rv, idx) => {
           const f = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || 3);
+          // SKU na Coluna C (Codigo_da_Grade) ou equivalentes
           const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
           const k = `${g}-${f}`;
           
+          // Quantidade na Coluna I (Qtde_Vendida), Valor na Coluna J (Preco_Total), PDV na Coluna K (Preco_Médio)
           const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
           const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
           const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
@@ -170,7 +172,7 @@ export default function Home() {
         });
       }
 
-      // 3. Processamento de Estoque Principal Filiais (Shop9) - Preservando todas as filiais físicas
+      // 3. Processamento de Estoque Principal Filiais (Shop9) - Mantendo todas as filiais físicas
       setStatusUpload(`Processando base principal de estoque (${fileEstoqueShop.name})...`);
       const bufferEstoque = await fileEstoqueShop.arrayBuffer();
       const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
@@ -235,7 +237,7 @@ export default function Home() {
         });
       });
 
-      // 4. Inclusão da FILIAL 8 (E-commerce) para os SKUs do Tiny ERP
+      // 4. Acréscimo da FILIAL 8 (E-commerce) com base no SKU/Grade (Coluna A) e Estoque (Coluna C) do Tiny
       Object.entries(mapaEstoqueEc).forEach(([grade, estoqueEc]) => {
         const gradeFilialEc = `${grade}-8`;
         const template = rowsEstoque.find(r => String(r['Grade'] || r['Código_da_Grade']) === grade) || rowsEstoque[0];
@@ -262,7 +264,7 @@ export default function Home() {
           grade,
           codigo,
           produto,
-          filial: 8, // Filial E-commerce
+          filial: 8, // Filial 8 (E-commerce)
           cor,
           tamanho,
           genero,
@@ -312,7 +314,7 @@ export default function Home() {
         await new Promise(res => setTimeout(res, 200));
       }
 
-      setStatusUpload('Base consolidada com todas as filiais e Filial 8 gerada com sucesso!');
+      setStatusUpload('Base consolidada gerada com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -378,7 +380,7 @@ export default function Home() {
     });
   }, [dados, filtroBusca, filtroData, filtroMarca, filtroFilial, filtroClasse]);
 
-  // Totais superiores do mês (acumulados na linha superior do dashboard)
+  // Totais superiores do mês
   const totaisGeraisMes = useMemo(() => {
     const totalEstoque = dadosFiltrados.reduce((acc, item) => acc + item.estoque, 0);
     const totalCusto = dadosFiltrados.reduce((acc, item) => acc + item.custoTotal, 0);
@@ -460,7 +462,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data e envie os arquivos para consolidar todas as filiais físicas e a Filial 8.</p>
+              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos de loja e e-commerce para gerar a Filial 8 mantendo as demais filiais.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -488,7 +490,7 @@ export default function Home() {
 
                 <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                   <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 02 (Shop9)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Vendas Filiais</h4>
+                  <h4 className="text-sm font-bold text-white mb-3">Vendas Filiais (Col. C, I, J, K)</h4>
                   <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
                     <span className="text-xs text-slate-300">{fileVendasShop ? fileVendasShop.name : 'Selecionar arquivo (.xls/.txt)'}</span>
                     <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileVendasShop(e.target.files?.[0] || null)} className="hidden" />
@@ -506,7 +508,7 @@ export default function Home() {
 
                 <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                   <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 04 (Tiny ERP)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Relatório Vendas</h4>
+                  <h4 className="text-sm font-bold text-white mb-3">Relatório Vendas E-c</h4>
                   <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
                     <span className="text-xs text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar arquivo (.xls)'}</span>
                     <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
