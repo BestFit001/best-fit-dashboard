@@ -35,7 +35,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione a data e os 4 relatórios para processamento.');
+  const [statusUpload, setStatusUpload] = useState('Selecione a data e os relatórios para processamento.');
 
   const [dataEnvio, setDataEnvio] = useState<string>('');
   const [fileEstoqueShop, setFileEstoqueShop] = useState<File | null>(null);
@@ -120,10 +120,30 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 1. Processa Vendas Filiais (Shop9 / Tiny) para somar unidades e SKUs vendidos
-      const mapaVendas: { [key: string]: { qtd: number, valor: number } } = {};
-      
+      // 1. Processamento de Estoque E-commerce / Tiny (Coluna A = Grade/SKU, Coluna C = Estoque)
+      const mapaEstoqueEc: { [grade: string]: number } = {};
+      if (fileEstoqueTiny) {
+        setStatusUpload(`Lendo saldos de estoque E-commerce (${fileEstoqueTiny.name})...`);
+        const bufTiny = await fileEstoqueTiny.arrayBuffer();
+        const wbTiny = XLSX.read(bufTiny, { type: 'array' });
+        const shTiny = wbTiny.Sheets[wbTiny.SheetNames[0]];
+        const rowsTiny: any[] = XLSX.utils.sheet_to_json(shTiny, { header: 1 }); // Array of arrays para pegar por índice de coluna (A=0, C=2)
+
+        rowsTiny.forEach((r: any[]) => {
+          if (r && r.length >= 3) {
+            const gradeSku = String(r[0] || '').trim(); // Coluna A (SKU/Grade)
+            const qtdEstoqueEc = Number(r[2] || 0);     // Coluna C (Unidades de Estoque)
+            if (gradeSku) {
+              mapaEstoqueEc[gradeSku] = (mapaEstoqueEc[gradeSku] || 0) + qtdEstoqueEc;
+            }
+          }
+        });
+      }
+
+      // 2. Processamento de Vendas (Mapeando Colunas I, J, K / Qtde_Vendida / Preco_Total / Preco_Médio e Média E-commerce)
+      const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
       const arquivosVendas = [fileVendasShop, fileVendasTiny].filter(Boolean) as File[];
+
       for (const arquivoVenda of arquivosVendas) {
         setStatusUpload(`Lendo relatório de vendas (${arquivoVenda.name})...`);
         const bufVendas = await arquivoVenda.arrayBuffer();
@@ -135,16 +155,22 @@ export default function Home() {
           const f = Number(rv['Filial'] || rv['Depósito'] || 3);
           const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || `1000${idx}`);
           const k = `${g}-${f}`;
+          
           const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || 0);
           const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || 0);
+          const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || (qtd > 0 ? val / qtd : 0));
 
-          if (!mapaVendas[k]) mapaVendas[k] = { qtd: 0, valor: 0 };
+          if (!mapaVendas[k]) mapaVendas[k] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
           mapaVendas[k].qtd += qtd;
           mapaVendas[k].valor += val;
+          if (pdvUnitario > 0) {
+            mapaVendas[k].somaPdv += pdvUnitario;
+            mapaVendas[k].countPdv += 1;
+          }
         });
       }
 
-      // 2. Processa Estoque Principal (Shop9 / Tiny Saldos)
+      // 3. Processamento de Estoque Principal Filiais (Shop9) + Soma do Estoque E-commerce (Tiny)
       setStatusUpload(`Processando base principal de estoque (${fileEstoqueShop.name})...`);
       const bufferEstoque = await fileEstoqueShop.arrayBuffer();
       const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
@@ -165,16 +191,22 @@ export default function Home() {
         const classe = String(row['Classe'] || 'NÃO CADASTRADO');
         const familia = String(row['Familia'] || row['Família'] || 'Não Cadastrado');
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
-        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
+        
+        // Estoque Loja + Estoque E-commerce (Tiny coluna C com base na Grade SKU)
+        const estoqueLoja = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
+        const estoqueEc = mapaEstoqueEc[grade] || 0;
+        const estoqueTotal = estoqueLoja + estoqueEc;
 
         const custo = Number(row['Preco'] || row['Custo'] || 0);
-        const pdvEc = Number(row['Preco1'] || row['Preço'] || (custo * 1.9));
+        
+        const vendaInfo = mapaVendas[gradeFilial] || { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+        const mediaPdvEc = vendaInfo.countPdv > 0 ? vendaInfo.somaPdv / vendaInfo.countPdv : 0;
+
+        const pdvEc = Number(row['Preco1'] || row['Preço'] || (mediaPdvEc > 0 ? mediaPdvEc : custo * 1.9));
         const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
-        const custoTotal = Number((estoque * custo).toFixed(2));
-
-        const vendaInfo = mapaVendas[gradeFilial] || { qtd: 0, valor: 0 };
+        const custoTotal = Number((estoqueTotal * custo).toFixed(2));
 
         return {
           data_referencia: dataEnvio,
@@ -190,7 +222,7 @@ export default function Home() {
           classe,
           familia,
           fornecedor,
-          estoque,
+          estoque: estoqueTotal,
           custo,
           custo_total: custoTotal,
           margem_loja: margemLoja,
@@ -202,23 +234,37 @@ export default function Home() {
         };
       });
 
-      // 3. Envio seguro em lotes para o Supabase
-      const tamanhoLote = 400;
+      // 4. Envio seguro em lotes para o Supabase
+      const tamanhoLote = 300;
+      const totalLotes = Math.ceil(registrosProcessados.length / tamanhoLote);
+
       for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
         const lote = registrosProcessados.slice(i, i + tamanhoLote);
-        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)}...`);
+        const numeroLote = Math.floor(i / tamanhoLote) + 1;
+        setStatusUpload(`Enviando lote ${numeroLote} de ${totalLotes}...`);
 
-        const { error } = await supabase
-          .from('produtos_compras')
-          .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+        let tentativas = 0;
+        let sucesso = false;
 
-        if (error) {
-          console.error('Erro ao salvar lote:', error);
-          alert(`Erro do Supabase: ${error.message}`);
+        while (tentativas < 3 && !sucesso) {
+          try {
+            const { error } = await supabase
+              .from('produtos_compras')
+              .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+
+            if (error) throw error;
+            sucesso = true;
+          } catch (err) {
+            tentativas++;
+            if (tentativas >= 3) throw err;
+            await new Promise(res => setTimeout(res, 1000));
+          }
         }
+
+        await new Promise(res => setTimeout(res, 200));
       }
 
-      setStatusUpload('Base consolidada e cruzamento de vendas concluídos com sucesso!');
+      setStatusUpload('Base consolidada e cruzamento de estoque/vendas concluídos com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -282,6 +328,15 @@ export default function Home() {
       );
     });
   }, [dados, filtroBusca, filtroData, filtroMarca, filtroFilial, filtroClasse]);
+
+  // Totais superiores do mês (acumulados na linha superior do dashboard)
+  const totaisGeraisMes = useMemo(() => {
+    const totalEstoque = dadosFiltrados.reduce((acc, item) => acc + item.estoque, 0);
+    const totalCusto = dadosFiltrados.reduce((acc, item) => acc + item.custoTotal, 0);
+    const totalVendasItens = dadosFiltrados.reduce((acc, item) => acc + item.vendaGeralItens, 0);
+    const totalVendasValor = dadosFiltrados.reduce((acc, item) => acc + item.vendaGeralValor, 0);
+    return { totalEstoque, totalCusto, totalVendasItens, totalVendasValor };
+  }, [dadosFiltrados]);
 
   const estruturaDinamica = useMemo(() => {
     const linhasSet = new Set<string>();
@@ -355,8 +410,8 @@ export default function Home() {
         {activeTab === 'upload' ? (
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Upload das 4 Fontes & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data e envie as planilhas para consolidar estoque, SKUs vendidos e PDV acumulado.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
+              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos de loja e e-commerce para cruzar o estoque.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -393,7 +448,7 @@ export default function Home() {
 
                 <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
                   <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 03 (Tiny ERP)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Saldos Estoque</h4>
+                  <h4 className="text-sm font-bold text-white mb-3">Saldos Estoque E-c (Coluna A & C)</h4>
                   <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
                     <span className="text-xs text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar arquivo (.xls)'}</span>
                     <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
@@ -446,6 +501,26 @@ export default function Home() {
                 >
                   <Trash2 className="w-4 h-4" /> Apagar Base Inteira
                 </button>
+              </div>
+            </div>
+
+            {/* Linha Superior: Totais de Vendas e Estoque no Mês */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+                <span className="text-xs text-slate-400 font-medium uppercase">Total Estoque (Loja + E-c)</span>
+                <div className="text-2xl font-bold text-white mt-1">{totaisGeraisMes.totalEstoque.toLocaleString('pt-BR')} un</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+                <span className="text-xs text-slate-400 font-medium uppercase">Total Custo Estoque</span>
+                <div className="text-2xl font-bold text-indigo-400 mt-1">R$ {totaisGeraisMes.totalCusto.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+                <span className="text-xs text-slate-400 font-medium uppercase">Total Vendas (Itens no Mês)</span>
+                <div className="text-2xl font-bold text-sky-400 mt-1">{totaisGeraisMes.totalVendasItens.toLocaleString('pt-BR')} un</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
+                <span className="text-xs text-slate-400 font-medium uppercase">Total Vendas (Valor no Mês)</span>
+                <div className="text-2xl font-bold text-emerald-400 mt-1">R$ {totaisGeraisMes.totalVendasValor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
               </div>
             </div>
 
@@ -514,7 +589,7 @@ export default function Home() {
                       <th className="p-3">Gênero</th>
                       <th className="p-3">Marca</th>
                       <th className="p-3">Classe</th>
-                      <th className="p-3">Estoque</th>
+                      <th className="p-3">Estoque (Loja+E-c)</th>
                       <th className="p-3">Custo Total</th>
                       <th className="p-3">PDV E-c</th>
                       <th className="p-3">Vendas (Itens)</th>
@@ -534,7 +609,7 @@ export default function Home() {
                         <td className="p-3 text-slate-400">{item.genero}</td>
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
-                        <td className="p-3 font-bold text-white">{item.estoque}</td>
+                        <td className="p-3 font-bold text-white">{item.estoque} un</td>
                         <td className="p-3 text-slate-300">R$ {item.custoTotal.toFixed(2)}</td>
                         <td className="p-3 text-slate-300">R$ {item.pdvEc.toFixed(2)}</td>
                         <td className="p-3 font-bold text-indigo-300">{item.vendaGeralItens} un</td>
@@ -580,7 +655,7 @@ export default function Home() {
                 <div>
                   <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores (Métrica):</label>
                   <select value={metricaDinamica} onChange={(e) => setMetricaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
-                    <option value="estoque">Soma de Estoque</option>
+                    <option value="estoque">Soma de Estoque (Loja + E-c)</option>
                     <option value="custoTotal">Soma de Custo Total</option>
                     <option value="pdvEc">Soma de PDV E-commerce</option>
                     <option value="vendaGeralValor">Soma de Valor de Vendas</option>
