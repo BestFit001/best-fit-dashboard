@@ -133,7 +133,6 @@ export default function Home() {
           if (r && r.length >= 3) {
             const gradeSku = String(r[0] || '').trim(); // Coluna A (SKU/Grade)
             const qtdEstoqueEc = Number(r[2] || 0);     // Coluna C (Estoque físico)
-            // Ignora cabeçalhos textuais e valida se é número de grade válido
             if (gradeSku && gradeSku.toLowerCase() !== 'código (sku)' && !isNaN(qtdEstoqueEc)) {
               mapaEstoqueEc[gradeSku] = (mapaEstoqueEc[gradeSku] || 0) + qtdEstoqueEc;
             }
@@ -153,7 +152,7 @@ export default function Home() {
         const rowsVendas: any[] = XLSX.utils.sheet_to_json(shVendas);
 
         rowsVendas.forEach((rv, idx) => {
-          const f = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || 8); // Se não vier filial, assume 8 (E-c)
+          const f = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || 3);
           const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
           const k = `${g}-${f}`;
           
@@ -171,7 +170,7 @@ export default function Home() {
         });
       }
 
-      // 3. Processamento de Estoque Principal Filiais (Shop9)
+      // 3. Processamento de Estoque Principal Filiais (Shop9) - Preservando todas as filiais físicas
       setStatusUpload(`Processando base principal de estoque (${fileEstoqueShop.name})...`);
       const bufferEstoque = await fileEstoqueShop.arrayBuffer();
       const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
@@ -236,11 +235,9 @@ export default function Home() {
         });
       });
 
-      // 4. Criação e Inclusão da FILIAL 8 (E-commerce) para TODOS os SKUs encontrados na planilha do Tiny (Coluna A & C)
+      // 4. Inclusão da FILIAL 8 (E-commerce) para os SKUs do Tiny ERP
       Object.entries(mapaEstoqueEc).forEach(([grade, estoqueEc]) => {
         const gradeFilialEc = `${grade}-8`;
-        
-        // Tenta achar template nas lojas ou nas vendas
         const template = rowsEstoque.find(r => String(r['Grade'] || r['Código_da_Grade']) === grade) || rowsEstoque[0];
         
         const codigo = Number(template ? (template['Codigo'] || template['Código_Produto']) : 1000);
@@ -315,7 +312,7 @@ export default function Home() {
         await new Promise(res => setTimeout(res, 200));
       }
 
-      setStatusUpload('Base consolidada com Filial 8 (E-commerce) gerada com sucesso!');
+      setStatusUpload('Base consolidada com todas as filiais e Filial 8 gerada com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -361,7 +358,7 @@ export default function Home() {
 
   const datasUnicas = useMemo(() => ['TODAS', ...Array.from(new Set(dados.map(d => d.dataReferencia)))], [dados]);
   const marcasUnicas = useMemo(() => ['TODAS', ...Array.from(new Set(dados.map(d => d.marca)))], [dados]);
-  const filiaisUnicas = useMemo(() => ['TODAS', ...Array.from(new Set(dados.map(d => String(d.filial))))], [dados]);
+  const filiaisUnicas = useMemo(() => ['TODAS', ...Array.from(new Set(dados.map(d => String(d.filial)))).sort((a,b)=>Number(a)-Number(b))], [dados]);
   const classesUnicas = useMemo(() => ['TODAS', ...Array.from(new Set(dados.map(d => d.classe)))], [dados]);
 
   const dadosFiltrados = useMemo(() => {
@@ -463,7 +460,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos para gerar a Filial 8 baseada na Coluna A e C do Tiny.</p>
+              <p className="text-slate-400 mt-1">Selecione a data e envie os arquivos para consolidar todas as filiais físicas e a Filial 8.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -608,7 +605,7 @@ export default function Home() {
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Filial</label>
                 <select value={filtroFilial} onChange={(e) => setFiltroFilial(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-white focus:outline-none">
-                  {filiaisUnicas.map((f, idx) => <option key={idx} value={f}>Filial {f} {f === '8' ? '(E-c)' : ''}</option>)}
+                  {filiaisUnicas.map((f, idx) => <option key={idx} value={f}>Filial {f}</option>)}
                 </select>
               </div>
 
@@ -655,7 +652,7 @@ export default function Home() {
                         <td className="p-3 font-mono font-bold text-amber-400">{item.gradeFilial}</td>
                         <td className="p-3 font-mono">{item.codigo}</td>
                         <td className="p-3 font-medium text-white">{item.produto}</td>
-                        <td className="p-3 font-bold text-indigo-300">{item.filial} {item.filial === 8 ? '(E-c)' : ''}</td>
+                        <td className="p-3 font-bold text-indigo-300">{item.filial}</td>
                         <td className="p-3 text-slate-300">{item.cor}</td>
                         <td className="p-3 text-slate-300">{item.tamanho}</td>
                         <td className="p-3 text-slate-400">{item.genero}</td>
