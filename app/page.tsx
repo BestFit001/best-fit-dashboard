@@ -15,6 +15,7 @@ interface RegistroBase {
   filial: number;
   cor: string;
   tamanho: string;
+  genero: string;
   marca: string;
   classe: string;
   familia: string;
@@ -29,11 +30,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione a data e o arquivo de estoque.');
+  const [statusUpload, setStatusUpload] = useState('Selecione a data e os relatórios para processamento.');
 
-  // Estados de Upload
+  // Estados de Upload (4 Fontes)
   const [dataEnvio, setDataEnvio] = useState<string>('');
-  const [fileEstoque, setFileEstoque] = useState<File | null>(null);
+  const [fileEstoqueShop, setFileEstoqueShop] = useState<File | null>(null);
+  const [fileVendasShop, setFileVendasShop] = useState<File | null>(null);
+  const [fileEstoqueTiny, setFileEstoqueTiny] = useState<File | null>(null);
+  const [fileVendasTiny, setFileVendasTiny] = useState<File | null>(null);
 
   // Filtros da Base Consolidada
   const [filtroBusca, setFiltroBusca] = useState('');
@@ -58,7 +62,7 @@ export default function Home() {
         .from('produtos_compras')
         .select('*')
         .order('data_referencia', { ascending: false })
-        .limit(3000);
+        .limit(4000);
 
       if (error) throw error;
 
@@ -73,6 +77,7 @@ export default function Home() {
           filial: item.filial,
           cor: item.cor || 'SEM COR',
           tamanho: item.tamanho || 'UNICO',
+          genero: item.genero || 'NÃO CADASTRADO',
           marca: item.marca || 'NÃO CADASTRADO',
           classe: item.classe || 'NÃO CADASTRADO',
           familia: item.familia || 'NÃO CADASTRADO',
@@ -93,8 +98,9 @@ export default function Home() {
 
   const processarEEnviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileEstoque) {
-      alert('Selecione o arquivo de estoque!');
+    const arquivoAlvo = fileEstoqueShop || fileVendasShop || fileEstoqueTiny || fileVendasTiny;
+    if (!arquivoAlvo) {
+      alert('Selecione pelo menos um arquivo para processamento!');
       return;
     }
     if (!dataEnvio) {
@@ -106,7 +112,7 @@ export default function Home() {
     setStatusUpload(`Lendo arquivo e associando à data ${dataEnvio}...`);
 
     try {
-      const buffer = await fileEstoque.arrayBuffer();
+      const buffer = await arquivoAlvo.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(sheet);
@@ -114,18 +120,19 @@ export default function Home() {
       setStatusUpload(`Processando ${rows.length} registros para o Supabase...`);
 
       const registrosProcessados = rows.map((row, idx) => {
-        const filial = Number(row['Filial'] || 3);
-        const grade = String(row['Grade'] || `1000${idx}`);
-        const codigo = Number(row['Codigo'] || 1000 + idx);
-        const produto = String(row['Produto'] || 'PRODUTO NÃO CADASTRADO');
-        const cor = String(row['Cor'] || 'SEM COR');
-        const tamanho = String(row['Tamanho'] || 'UNICO');
+        const filial = Number(row['Filial'] || row['Filial_ID'] || 3);
+        const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
+        const codigo = Number(row['Codigo'] || row['Código_Produto'] || 1000 + idx);
+        const produto = String(row['Produto'] || row['Nome_Produto'] || 'PRODUTO NÃO CADASTRADO');
+        const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
+        const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
+        const genero = String(row['Genero'] || 'NÃO CADASTRADO');
         const marca = String(row['Marca'] || 'NÃO CADASTRADO');
         const classe = String(row['Classe'] || 'NÃO CADASTRADO');
         const familia = String(row['Familia'] || 'NÃO CADASTRADO');
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
-        const estoque = Number(row['Estoque'] || 0);
-        const custo = Number(row['Preco'] || 0);
+        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || 0);
+        const custo = Number(row['Preco'] || row['Preco_Total'] || 0);
         const pdvEc = Number(row['Preco1'] || (custo * 1.9));
         const custoTotal = Number((estoque * custo).toFixed(2));
 
@@ -138,6 +145,7 @@ export default function Home() {
           filial,
           cor,
           tamanho,
+          genero,
           marca,
           classe,
           familia,
@@ -161,9 +169,12 @@ export default function Home() {
         if (error) console.error('Erro no lote:', error.message);
       }
 
-      setStatusUpload('Dados salvos com sucesso!');
+      setStatusUpload('Dados salvos e consolidados com sucesso!');
       setLoading(false);
-      setFileEstoque(null);
+      setFileEstoqueShop(null);
+      setFileVendasShop(null);
+      setFileEstoqueTiny(null);
+      setFileVendasTiny(null);
       await carregarDadosDoSupabase();
       setActiveTab('dashboard');
     } catch (err) {
@@ -187,7 +198,7 @@ export default function Home() {
 
   const apagarPorData = async () => {
     if (filtroData === 'TODAS') {
-      alert('Selecione uma data específica no filtro acima para apagar.');
+      alert('Selecione uma data específica no filtro para apagar.');
       return;
     }
     if (!confirm(`Deseja apagar todos os registros da data ${filtroData}?`)) return;
@@ -291,10 +302,10 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         {activeTab === 'upload' ? (
-          <form onSubmit={processarEEnviar} className="space-y-8 max-w-3xl mx-auto animate-in fade-in duration-300">
+          <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Upload com Data de Referência</h1>
-              <p className="text-slate-400 mt-1">Informe a data do relatório antes de enviar para o Supabase.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Data Base</h1>
+              <p className="text-slate-400 mt-1">Selecione a data de competência e envie os arquivos para alimentar o Supabase em lotes seguros.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -306,20 +317,49 @@ export default function Home() {
                   type="date"
                   value={dataEnvio}
                   onChange={(e) => setDataEnvio(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500"
+                  className="w-full sm:w-1/3 bg-slate-950 border border-slate-800 rounded-lg p-3 text-sm text-white focus:outline-none focus:border-indigo-500"
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">Arquivo de Estoque (.xls / .xlsx / .txt)</label>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer bg-slate-950 block transition-all">
-                  <FileSpreadsheet className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-slate-200 block">{fileEstoque ? fileEstoque.name : 'Clique para escolher o arquivo'}</span>
-                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileEstoque(e.target.files?.[0] || null)} className="hidden" />
-                </label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 01 (Shop9)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Estoque Filiais</h4>
+                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
+                    <span className="text-xs text-slate-300">{fileEstoqueShop ? fileEstoqueShop.name : 'Selecionar arquivo (.xls/.txt)'}</span>
+                    <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileEstoqueShop(e.target.files?.[0] || null)} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 02 (Shop9)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Vendas Filiais</h4>
+                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
+                    <span className="text-xs text-slate-300">{fileVendasShop ? fileVendasShop.name : 'Selecionar arquivo (.xls/.txt)'}</span>
+                    <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileVendasShop(e.target.files?.[0] || null)} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 03 (Tiny ERP)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Saldos Estoque</h4>
+                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
+                    <span className="text-xs text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar arquivo (.xls)'}</span>
+                    <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
+                  </label>
+                </div>
+
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
+                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 04 (Tiny ERP)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Relatório Vendas</h4>
+                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
+                    <span className="text-xs text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar arquivo (.xls)'}</span>
+                    <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
+                  </label>
+                </div>
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
                   <h4 className="font-medium text-white text-xs uppercase tracking-wider text-indigo-400">Status</h4>
                   <p className="text-sm text-slate-300">{statusUpload}</p>
@@ -327,10 +367,10 @@ export default function Home() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 text-sm"
+                  className="w-full sm:w-auto px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 text-sm"
                 >
                   {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {loading ? 'Enviando...' : 'Processar & Enviar'} <ArrowRight className="w-4 h-4" />
+                  {loading ? 'Processando...' : 'Processar & Enviar'} <ArrowRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
@@ -340,9 +380,9 @@ export default function Home() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Supabase)</h1>
-                <p className="text-slate-400 mt-1">Gerencie os dados por data e filtre com facilidade.</p>
+                <p className="text-slate-400 mt-1">Gerencie, filtre por data ou limpe registros indesejados.</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <button 
                   onClick={apagarPorData}
                   className="px-4 py-2 bg-amber-600/20 border border-amber-500/30 hover:bg-amber-600/30 text-amber-300 text-sm font-medium rounded-xl flex items-center gap-2"
@@ -403,7 +443,7 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tabela */}
+            {/* Tabela BASE */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white">Registros Exibidos ({dadosFiltrados.length})</h3>
@@ -422,6 +462,7 @@ export default function Home() {
                       <th className="p-3">Filial</th>
                       <th className="p-3">Cor</th>
                       <th className="p-3">Tamanho</th>
+                      <th className="p-3">Gênero</th>
                       <th className="p-3">Marca</th>
                       <th className="p-3">Classe</th>
                       <th className="p-3">Estoque</th>
@@ -439,6 +480,7 @@ export default function Home() {
                         <td className="p-3">{item.filial}</td>
                         <td className="p-3 text-slate-300">{item.cor}</td>
                         <td className="p-3 text-slate-300">{item.tamanho}</td>
+                        <td className="p-3 text-slate-400">{item.genero}</td>
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
                         <td className="p-3 font-bold text-white">{item.estoque}</td>
@@ -452,33 +494,39 @@ export default function Home() {
             </div>
           </div>
         ) : (
+          /* ABA 3: TABELA DINÂMICA (PIVOT TABLE) */
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Tabela Dinâmica Interativa</h1>
-                <p className="text-slate-400 mt-1">Cruzamento matricial em tempo real.</p>
+                <p className="text-slate-400 mt-1">Cruzamento matricial por eixos (Linhas x Colunas) em tempo real.</p>
               </div>
               <div className="flex flex-wrap items-center gap-3 bg-slate-900 border border-slate-800 p-3 rounded-xl shadow-lg">
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Linhas:</label>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Rótulos de Linha:</label>
                   <select value={linhaDinamica} onChange={(e) => setLinhaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
                     <option value="marca">Marca</option>
                     <option value="classe">Classe</option>
+                    <option value="familia">Família</option>
                     <option value="filial">Filial</option>
+                    <option value="genero">Gênero</option>
                     <option value="cor">Cor</option>
                     <option value="tamanho">Tamanho</option>
+                    <option value="fornecedor">Fornecedor</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Colunas:</label>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Rótulos de Coluna:</label>
                   <select value={colunaDinamica} onChange={(e) => setColunaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
                     <option value="filial">Filial</option>
                     <option value="marca">Marca</option>
                     <option value="classe">Classe</option>
+                    <option value="genero">Gênero</option>
+                    <option value="tamanho">Tamanho</option>
                   </select>
                 </div>
                 <div>
-                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores:</label>
+                  <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores (Métrica):</label>
                   <select value={metricaDinamica} onChange={(e) => setMetricaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
                     <option value="estoque">Soma de Estoque</option>
                     <option value="custoTotal">Soma de Custo Total</option>
