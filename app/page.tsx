@@ -33,7 +33,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione a data e os arquivos para processamento.');
+  const [statusUpload, setStatusUpload] = useState('Selecione a data e os relatórios para processamento.');
 
   const [dataEnvio, setDataEnvio] = useState<string>('');
   const [fileEstoqueShop, setFileEstoqueShop] = useState<File | null>(null);
@@ -62,7 +62,7 @@ export default function Home() {
         .from('produtos_compras')
         .select('*')
         .order('data_referencia', { ascending: false })
-        .limit(5000);
+        .limit(6000);
 
       if (error) {
         console.error('Erro ao buscar dados do Supabase:', error.message);
@@ -80,10 +80,10 @@ export default function Home() {
           filial: item.filial,
           cor: item.cor || 'SEM COR',
           tamanho: item.tamanho || 'UNICO',
-          genero: item.genero || 'NÃO CADASTRADO',
-          marca: item.marca || 'NÃO CADASTRADO',
+          genero: item.genero || 'Não Cadastrado',
+          marca: item.marca || 'Não Cadastrado',
           classe: item.classe || 'NÃO CADASTRADO',
-          familia: item.familia || 'NÃO CADASTRADO',
+          familia: item.familia || 'Não Cadastrado',
           fornecedor: item.fornecedor || 'NÃO CADASTRADO',
           estoque: item.estoque || 0,
           custoTotal: Number(item.custo_total || 0),
@@ -104,15 +104,8 @@ export default function Home() {
 
   const processarEEnviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const arquivosSelecionados = [
-      { file: fileEstoqueShop, tipo: 'estoque_shop' },
-      { file: fileVendasShop, tipo: 'vendas_shop' },
-      { file: fileEstoqueTiny, tipo: 'estoque_tiny' },
-      { file: fileVendasTiny, tipo: 'vendas_tiny' }
-    ].filter(item => item.file !== null);
-
-    if (arquivosSelecionados.length === 0) {
-      alert('Selecione pelo menos um arquivo para processamento!');
+    if (!fileEstoqueShop) {
+      alert('O arquivo principal "Estoque Filiais (Shop9)" é obrigatório para estruturar a base!');
       return;
     }
     if (!dataEnvio) {
@@ -123,78 +116,78 @@ export default function Home() {
     setLoading(true);
 
     try {
-      for (const item of arquivosSelecionados) {
-        setStatusUpload(`Lendo arquivo ${item.file!.name}...`);
-        const buffer = await item.file!.arrayBuffer();
-        const workbook = XLSX.read(buffer, { type: 'array' });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      // 1. Processa a Fonte Principal (Estoque Shop9) - A base de toda a estrutura BASE
+      setStatusUpload(`Lendo arquivo principal de estoque (${fileEstoqueShop.name})...`);
+      const bufferEstoque = await fileEstoqueShop.arrayBuffer();
+      const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
+      const sheetEstoque = wbEstoque.Sheets[wbEstoque.SheetNames[0]];
+      const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
-        setStatusUpload(`Processando ${rows.length} registros de ${item.file!.name}...`);
+      setStatusUpload(`Processando ${rowsEstoque.length} registros da base principal...`);
 
-        const registrosProcessados = rows.map((row, idx) => {
-          const filial = Number(row['Filial'] || row['Filial_ID'] || row['Depósito'] || 3);
-          const grade = String(row['Grade'] || row['Código_da_Grade'] || row['Código'] || `1000${idx}`);
-          const codigo = Number(row['Codigo'] || row['Código_Produto'] || row['Código'] || 1000 + idx);
-          const produto = String(row['Produto'] || row['Nome_Produto'] || row['Descrição'] || 'PRODUTO NÃO CADASTRADO');
-          const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
-          const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
-          const genero = String(row['Genero'] || row['Gênero'] || 'NÃO CADASTRADO');
-          const marca = String(row['Marca'] || 'NÃO CADASTRADO');
-          const classe = String(row['Classe'] || 'NÃO CADASTRADO');
-          const familia = String(row['Familia'] || row['Família'] || 'NÃO CADASTRADO');
-          const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
-          const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
-          
-          // Mapeamento de Custos e Preços conforme a planilha de referência
-          const custo = Number(row['Preco'] || row['Preco_Total'] || row['Custo'] || 50.0);
-          const pdvEc = Number(row['Preco1'] || row['Preço'] || (custo * 1.9));
-          const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
-          const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
-          const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
-          const custoTotal = Number((estoque * custo).toFixed(2));
+      const registrosProcessados = rowsEstoque.map((row, idx) => {
+        const filial = Number(row['Filial'] || 3);
+        const grade = String(row['Grade'] || `1000${idx}`);
+        const codigo = Number(row['Codigo'] || 1000 + idx);
+        const produto = String(row['Produto'] || 'PRODUTO NÃO CADASTRADO');
+        const cor = String(row['Cor'] || 'SEM COR');
+        const tamanho = String(row['Tamanho'] || 'UNICO');
+        const genero = String(row['Genero'] || row['Gênero'] || 'Não Cadastrado');
+        const marca = String(row['Marca'] || 'Não Cadastrado');
+        const classe = String(row['Classe'] || 'NÃO CADASTRADO');
+        const familia = String(row['Familia'] || row['Família'] || 'Não Cadastrado');
+        const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
+        const estoque = Number(row['Estoque'] || 0);
 
-          return {
-            data_referencia: dataEnvio,
-            grade_filial: `${grade}-${filial}`,
-            grade,
-            codigo,
-            produto,
-            filial,
-            cor,
-            tamanho,
-            genero,
-            marca,
-            classe,
-            familia,
-            fornecedor,
-            estoque,
-            custo,
-            custo_total: custoTotal,
-            margem_loja: margemLoja,
-            pdv_loja: pdvLoja,
-            margem_ec: margemEc,
-            pdv_ec: pdvEc,
-          };
-        });
+        // Captura de Custos e Preços exatos do Shop9 (Preco = Custo, Preco1 = PDV E-c, Preco2 = PDV Loja)
+        const custo = Number(row['Preco'] || 0);
+        const pdvEc = Number(row['Preco1'] || (custo * 1.9));
+        const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
+        const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
+        const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
+        const custoTotal = Number((estoque * custo).toFixed(2));
 
-        const tamanhoLote = 400;
-        for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
-          const lote = registrosProcessados.slice(i, i + tamanhoLote);
-          setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)} (${item.file!.name})...`);
+        return {
+          data_referencia: dataEnvio,
+          grade_filial: `${grade}-${filial}`,
+          grade,
+          codigo,
+          produto,
+          filial,
+          cor,
+          tamanho,
+          genero,
+          marca,
+          classe,
+          familia,
+          fornecedor,
+          estoque,
+          custo,
+          custo_total: custoTotal,
+          margem_loja: margemLoja,
+          pdv_loja: pdvLoja,
+          margem_ec: margemEc,
+          pdv_ec: pdvEc,
+        };
+      });
 
-          const { error } = await supabase
-            .from('produtos_compras')
-            .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+      // Envio em lotes seguros para o Supabase
+      const tamanhoLote = 400;
+      for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
+        const lote = registrosProcessados.slice(i, i + tamanhoLote);
+        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)} para o Supabase...`);
 
-          if (error) {
-            console.error('Erro ao salvar lote no Supabase:', error);
-            alert(`Erro do Supabase: ${error.message}`);
-          }
+        const { error } = await supabase
+          .from('produtos_compras')
+          .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+
+        if (error) {
+          console.error('Erro ao salvar lote no Supabase:', error);
+          alert(`Erro do Supabase: ${error.message}`);
         }
       }
 
-      setStatusUpload('Arquivos processados e salvos com sucesso!');
+      setStatusUpload('Base consolidada gerada e salva com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -205,7 +198,7 @@ export default function Home() {
     } catch (err: any) {
       console.error('Erro geral no upload:', err);
       setLoading(false);
-      setStatusUpload('Erro ao processar os arquivos.');
+      setStatusUpload('Erro ao processar o arquivo.');
       alert('Erro inesperado: ' + err.message);
     }
   };
@@ -331,7 +324,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Data Base</h1>
-              <p className="text-slate-400 mt-1">Selecione a data e envie os arquivos para alimentar o Supabase.</p>
+              <p className="text-slate-400 mt-1">Selecione a data e envie a planilha principal de estoque para estruturar a base.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -348,39 +341,21 @@ export default function Home() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
-                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 01 (Shop9)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Estoque Filiais</h4>
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl border-indigo-500/50">
+                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 01 (Obrigatória)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Estoque Filiais (Shop9)</h4>
                   <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
-                    <span className="text-xs text-slate-300">{fileEstoqueShop ? fileEstoqueShop.name : 'Selecionar arquivo (.xls/.txt)'}</span>
+                    <span className="text-xs text-slate-300">{fileEstoqueShop ? fileEstoqueShop.name : 'Selecionar arquivo (.xls/.txt)...'}</span>
                     <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileEstoqueShop(e.target.files?.[0] || null)} className="hidden" />
                   </label>
                 </div>
 
-                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
-                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 02 (Shop9)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Vendas Filiais</h4>
+                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl opacity-75">
+                  <div className="text-xs text-slate-400 font-semibold uppercase mb-1">Fonte 02 (Opcional)</div>
+                  <h4 className="text-sm font-bold text-white mb-3">Vendas Filiais (Shop9)</h4>
                   <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
-                    <span className="text-xs text-slate-300">{fileVendasShop ? fileVendasShop.name : 'Selecionar arquivo (.xls/.txt)'}</span>
+                    <span className="text-xs text-slate-300">{fileVendasShop ? fileVendasShop.name : 'Selecionar arquivo...'}</span>
                     <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileVendasShop(e.target.files?.[0] || null)} className="hidden" />
-                  </label>
-                </div>
-
-                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
-                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 03 (Tiny ERP)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Saldos Estoque</h4>
-                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
-                    <span className="text-xs text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar arquivo (.xls)'}</span>
-                    <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
-                  </label>
-                </div>
-
-                <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl">
-                  <div className="text-xs text-indigo-400 font-semibold uppercase mb-1">Fonte 04 (Tiny ERP)</div>
-                  <h4 className="text-sm font-bold text-white mb-3">Relatório Vendas</h4>
-                  <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-3 text-center cursor-pointer bg-slate-900 block truncate">
-                    <span className="text-xs text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar arquivo (.xls)'}</span>
-                    <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
                   </label>
                 </div>
               </div>
@@ -490,6 +465,7 @@ export default function Home() {
                       <th className="p-3">Marca</th>
                       <th className="p-3">Classe</th>
                       <th className="p-3">Família</th>
+                      <th className="p-3">Fornecedor</th>
                       <th className="p-3">Estoque</th>
                       <th className="p-3">Custo Total</th>
                       <th className="p-3">PDV E-c</th>
@@ -509,6 +485,7 @@ export default function Home() {
                         <td className="p-3 font-semibold text-slate-200">{item.marca}</td>
                         <td className="p-3 text-slate-400">{item.classe}</td>
                         <td className="p-3 text-slate-400">{item.familia}</td>
+                        <td className="p-3 text-slate-400">{item.fornecedor}</td>
                         <td className="p-3 font-bold text-white">{item.estoque}</td>
                         <td className="p-3 text-slate-300">R$ {item.custoTotal.toFixed(2)}</td>
                         <td className="p-3 text-slate-300">R$ {item.pdvEc.toFixed(2)}</td>
