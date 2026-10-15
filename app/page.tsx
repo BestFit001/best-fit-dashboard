@@ -30,23 +30,20 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione a data e os relatórios para processamento.');
+  const [statusUpload, setStatusUpload] = useState('Selecione a data e os arquivos para processamento.');
 
-  // Estados de Upload (4 Fontes)
   const [dataEnvio, setDataEnvio] = useState<string>('');
   const [fileEstoqueShop, setFileEstoqueShop] = useState<File | null>(null);
   const [fileVendasShop, setFileVendasShop] = useState<File | null>(null);
   const [fileEstoqueTiny, setFileEstoqueTiny] = useState<File | null>(null);
   const [fileVendasTiny, setFileVendasTiny] = useState<File | null>(null);
 
-  // Filtros da Base Consolidada
   const [filtroBusca, setFiltroBusca] = useState('');
   const [filtroData, setFiltroData] = useState('TODAS');
   const [filtroMarca, setFiltroMarca] = useState('TODAS');
   const [filtroFilial, setFiltroFilial] = useState('TODAS');
   const [filtroClasse, setFiltroClasse] = useState('TODAS');
 
-  // Configuração da Tabela Dinâmica
   const [linhaDinamica, setLinhaDinamica] = useState<keyof RegistroBase>('marca');
   const [colunaDinamica, setColunaDinamica] = useState<keyof RegistroBase>('filial');
   const [metricaDinamica, setMetricaDinamica] = useState<'estoque' | 'custoTotal' | 'pdvEc'>('estoque');
@@ -62,9 +59,12 @@ export default function Home() {
         .from('produtos_compras')
         .select('*')
         .order('data_referencia', { ascending: false })
-        .limit(4000);
+        .limit(5000);
 
-      if (error) throw error;
+      if (error) {
+        console.error('Erro ao buscar dados do Supabase:', error.message);
+        return;
+      }
 
       if (data && data.length > 0) {
         const formatados: RegistroBase[] = data.map((item: any) => ({
@@ -92,14 +92,20 @@ export default function Home() {
         setDados([]);
       }
     } catch (err) {
-      console.error('Erro ao buscar dados do Supabase:', err);
+      console.error('Erro geral ao buscar dados:', err);
     }
   };
 
   const processarEEnviar = async (e: React.FormEvent) => {
     e.preventDefault();
-    const arquivoAlvo = fileEstoqueShop || fileVendasShop || fileEstoqueTiny || fileVendasTiny;
-    if (!arquivoAlvo) {
+    const arquivosSelecionados = [
+      { file: fileEstoqueShop, tipo: 'estoque_shop' },
+      { file: fileVendasShop, tipo: 'vendas_shop' },
+      { file: fileEstoqueTiny, tipo: 'estoque_tiny' },
+      { file: fileVendasTiny, tipo: 'vendas_tiny' }
+    ].filter(item => item.file !== null);
+
+    if (arquivosSelecionados.length === 0) {
       alert('Selecione pelo menos um arquivo para processamento!');
       return;
     }
@@ -109,67 +115,81 @@ export default function Home() {
     }
 
     setLoading(true);
-    setStatusUpload(`Lendo arquivo e associando à data ${dataEnvio}...`);
 
     try {
-      const buffer = await arquivoAlvo.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array' });
-      const sheet = workbook.Sheets[workbook.SheetNames[0]];
-      const rows: any[] = XLSX.utils.sheet_to_json(sheet);
+      for (const item of arquivosSelecionados) {
+        setStatusUpload(`Lendo arquivo ${item.file!.name}...`);
+        const buffer = await item.file!.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-      setStatusUpload(`Processando ${rows.length} registros para o Supabase...`);
+        // LOG DE DIAGNÓSTICO: Mostra no F12 do navegador as chaves reais detectadas na planilha
+        console.log(`=== DIRECIONAMENTO DE COLUNAS (${item.file!.name}) ===`);
+        if (rows.length > 0) {
+          console.log('Chaves (Colunas) encontradas:', Object.keys(rows[0]));
+          console.log('Exemplo da 1ª linha:', rows[0]);
+        } else {
+          console.warn('A planilha retornou 0 linhas válidas!');
+        }
 
-      const registrosProcessados = rows.map((row, idx) => {
-        const filial = Number(row['Filial'] || row['Filial_ID'] || 3);
-        const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
-        const codigo = Number(row['Codigo'] || row['Código_Produto'] || 1000 + idx);
-        const produto = String(row['Produto'] || row['Nome_Produto'] || 'PRODUTO NÃO CADASTRADO');
-        const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
-        const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
-        const genero = String(row['Genero'] || 'NÃO CADASTRADO');
-        const marca = String(row['Marca'] || 'NÃO CADASTRADO');
-        const classe = String(row['Classe'] || 'NÃO CADASTRADO');
-        const familia = String(row['Familia'] || 'NÃO CADASTRADO');
-        const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
-        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || 0);
-        const custo = Number(row['Preco'] || row['Preco_Total'] || 0);
-        const pdvEc = Number(row['Preco1'] || (custo * 1.9));
-        const custoTotal = Number((estoque * custo).toFixed(2));
+        setStatusUpload(`Processando ${rows.length} registros de ${item.file!.name}...`);
 
-        return {
-          data_referencia: dataEnvio,
-          grade_filial: `${grade}-${filial}`,
-          grade,
-          codigo,
-          produto,
-          filial,
-          cor,
-          tamanho,
-          genero,
-          marca,
-          classe,
-          familia,
-          fornecedor,
-          estoque,
-          custo,
-          custo_total: custoTotal,
-          pdv_ec: pdvEc,
-        };
-      });
+        const registrosProcessados = rows.map((row, idx) => {
+          const filial = Number(row['Filial'] || row['Filial_ID'] || row['Depósito'] || 3);
+          const grade = String(row['Grade'] || row['Código_da_Grade'] || row['Código'] || `1000${idx}`);
+          const codigo = Number(row['Codigo'] || row['Código_Produto'] || row['Código'] || 1000 + idx);
+          const produto = String(row['Produto'] || row['Nome_Produto'] || row['Descrição'] || 'PRODUTO NÃO CADASTRADO');
+          const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
+          const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
+          const genero = String(row['Genero'] || 'NÃO CADASTRADO');
+          const marca = String(row['Marca'] || 'NÃO CADASTRADO');
+          const classe = String(row['Classe'] || 'NÃO CADASTRADO');
+          const familia = String(row['Familia'] || 'NÃO CADASTRADO');
+          const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
+          const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
+          const custo = Number(row['Preco'] || row['Preco_Total'] || row['Custo'] || 0);
+          const pdvEc = Number(row['Preco1'] || row['Preço'] || (custo * 1.9));
+          const custoTotal = Number((estoque * custo).toFixed(2));
 
-      const tamanhoLote = 400;
-      for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
-        const lote = registrosProcessados.slice(i, i + tamanhoLote);
-        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)}...`);
+          return {
+            data_referencia: dataEnvio,
+            grade_filial: `${grade}-${filial}`,
+            grade,
+            codigo,
+            produto,
+            filial,
+            cor,
+            tamanho,
+            genero,
+            marca,
+            classe,
+            familia,
+            fornecedor,
+            estoque,
+            custo,
+            custo_total: custoTotal,
+            pdv_ec: pdvEc,
+          };
+        });
 
-        const { error } = await supabase
-          .from('produtos_compras')
-          .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+        const tamanhoLote = 400;
+        for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
+          const lote = registrosProcessados.slice(i, i + tamanhoLote);
+          setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)} (${item.file!.name})...`);
 
-        if (error) console.error('Erro no lote:', error.message);
+          const { error } = await supabase
+            .from('produtos_compras')
+            .upsert(lote, { onConflict: 'data_referencia,grade_filial' });
+
+          if (error) {
+            console.error('Erro ao salvar lote no Supabase:', error);
+            alert(`Erro do Supabase: ${error.message}`);
+          }
+        }
       }
 
-      setStatusUpload('Dados salvos e consolidados com sucesso!');
+      setStatusUpload('Arquivos processados e salvos com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -177,10 +197,11 @@ export default function Home() {
       setFileVendasTiny(null);
       await carregarDadosDoSupabase();
       setActiveTab('dashboard');
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      console.error('Erro geral no upload:', err);
       setLoading(false);
-      setStatusUpload('Erro ao processar o arquivo.');
+      setStatusUpload('Erro ao processar os arquivos.');
+      alert('Erro inesperado: ' + err.message);
     }
   };
 
@@ -305,7 +326,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Data Base</h1>
-              <p className="text-slate-400 mt-1">Selecione a data de competência e envie os arquivos para alimentar o Supabase em lotes seguros.</p>
+              <p className="text-slate-400 mt-1">Selecione a data e envie os arquivos para alimentar o Supabase.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -398,7 +419,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Filtros */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Buscar Produto</label>
@@ -443,7 +463,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tabela BASE */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white">Registros Exibidos ({dadosFiltrados.length})</h3>
@@ -494,7 +513,6 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          /* ABA 3: TABELA DINÂMICA (PIVOT TABLE) */
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
