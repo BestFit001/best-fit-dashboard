@@ -140,41 +140,63 @@ export default function Home() {
         });
       }
 
-      // 2. Processamento de Vendas (Lojas Shop9: Coluna C para SKU, Coluna I para Qtd, Coluna J para Valor, Coluna K para PDV)
-      const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
-      const arquivosVendas = [
-        { file: fileVendasShop, filialPadrao: null },
-        { file: fileVendasTiny, filialPadrao: 8 }
-      ].filter(item => item.file !== null);
-
-    for (const itemVenda of arquivosVendas) {
-      setStatusUpload(`Lendo relatório de vendas (${itemVenda.file!.name})...`);
-      const bufVendas = await itemVenda.file!.arrayBuffer();
-      const wbVendas = XLSX.read(bufVendas, { type: 'array' });
-      const shVendas = wbVendas.Sheets[wbVendas.SheetNames[0]];
-      const rowsVendas: any[] = XLSX.utils.sheet_to_json(shVendas);
-
-      rowsVendas.forEach((rv, idx) => {
-        // Se vier filial no registro usa ela, senão assume o padrão (null para Shop9 que traz filial na coluna, 8 para Tiny E-c)
-        const f = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || itemVenda.filialPadrao || 3);
-        // SKU/Grade prioritariamente na Coluna C (Codigo_da_Grade)
-        const g = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
-        const k = `${g}-${f}`;
+      // 2. Processamento de Vendas (Separação rigorosa entre Vendas Shop9 e Vendas Tiny E-c)
+      const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {
         
-        // Quantidade na Coluna I (Qtde_Vendida), Valor na Coluna J (Preco_Total), PDV na Coluna K (Preco_Médio)
-        const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
-        const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
-        const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
+      };
 
-        if (!mapaVendas[k]) mapaVendas[k] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
-        mapaVendas[k].qtd += qtd;
-        mapaVendas[k].valor += val;
-        if (pdvUnitario > 0) {
-          mapaVendas[k].somaPdv += pdvUnitario;
-          mapaVendas[k].countPdv += 1;
-        }
-      });
-    }
+      // Vendas Shop9 (Fonte 02) - Respeitando a filial que vem na própria linha da planilha
+      if (fileVendasShop) {
+        setStatusUpload(`Lendo relatório de vendas Filiais (${fileVendasShop.name})...`);
+        const bufVendasShop = await fileVendasShop.arrayBuffer();
+        const wbVendasShop = XLSX.read(bufVendasShop, { type: 'array' });
+        const shVendasShop = wbVendasShop.Sheets[wbVendasShop.SheetNames[0]];
+        const rowsVendasShop: any[] = XLSX.utils.sheet_to_json(shVendasShop);
+
+        rowsVendasShop.forEach((rv, idx) => {
+          const filial = Number(rv['Filial'] || rv['Depósito'] || rv['filial'] || 3);
+          const grade = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
+          const gradeFilial = `${grade}-${filial}`;
+          
+          const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
+          const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
+          const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
+
+          if (!mapaVendas[gradeFilial]) mapaVendas[gradeFilial] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+          mapaVendas[gradeFilial].qtd += qtd;
+          mapaVendas[gradeFilial].valor += val;
+          if (pdvUnitario > 0) {
+            mapaVendas[gradeFilial].somaPdv += pdvUnitario;
+            mapaVendas[gradeFilial].countPdv += 1;
+          }
+        });
+      }
+
+      // Vendas Tiny E-commerce (Fonte 04) - Atribuídas exclusivamente à Filial 8
+      if (fileVendasTiny) {
+        setStatusUpload(`Lendo relatório de vendas E-commerce (${fileVendasTiny.name})...`);
+        const bufVendasTiny = await fileVendasTiny.arrayBuffer();
+        const wbVendasTiny = XLSX.read(bufVendasTiny, { type: 'array' });
+        const shVendasTiny = wbVendasTiny.Sheets[wbVendasTiny.SheetNames[0]];
+        const rowsVendasTiny: any[] = XLSX.utils.sheet_to_json(shVendasTiny);
+
+        rowsVendasTiny.forEach((rv, idx) => {
+          const grade = String(rv['Codigo_da_Grade'] || rv['Grade'] || rv['Código'] || rv['codigo'] || `1000${idx}`);
+          const gradeFilialEc = `${grade}-8`; // Filial 8 E-commerce
+          
+          const qtd = Number(rv['Qtde_Vendida'] || rv['Quantidade'] || rv['quantidade'] || rv['Qtd'] || 0);
+          const val = Number(rv['Preco_Total'] || rv['Valor_Total'] || rv['Valor'] || rv['valor_total'] || 0);
+          const pdvUnitario = Number(rv['Preco_Médio'] || rv['Preço_Unitário'] || rv['Preco'] || (qtd > 0 ? val / qtd : 0));
+
+          if (!mapaVendas[gradeFilialEc]) mapaVendas[gradeFilialEc] = { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
+          mapaVendas[gradeFilialEc].qtd += qtd;
+          mapaVendas[gradeFilialEc].valor += val;
+          if (pdvUnitario > 0) {
+            mapaVendas[gradeFilialEc].somaPdv += pdvUnitario;
+            mapaVendas[gradeFilialEc].countPdv += 1;
+          }
+        });
+      }
 
       // 3. Processamento de Estoque Principal Filiais (Shop9)
       setStatusUpload(`Processando base principal de estoque (${fileEstoqueShop.name})...`);
@@ -260,7 +282,7 @@ export default function Home() {
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const custoTotalEc = Number((estoqueEc * custo).toFixed(2));
 
-        const vendaInfoEc = mapaVendas[gradeFilialEc] || mapaVendas[`${grade}-8`] || { qtd: 0, valor: 0 };
+        const vendaInfoEc = mapaVendas[gradeFilialEc] || { qtd: 0, valor: 0 };
 
         registrosProcessados.push({
           data_referencia: dataEnvio,
