@@ -140,7 +140,7 @@ export default function Home() {
         });
       }
 
-      // 2. Processamento de Vendas (Colunas I, J, K / Qtde_Vendida / Preco_Total / Preco_Médio com média de PDV)
+      // 2. Processamento de Vendas
       const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
       const arquivosVendas = [fileVendasShop, fileVendasTiny].filter(Boolean) as File[];
 
@@ -170,14 +170,17 @@ export default function Home() {
         });
       }
 
-      // 3. Processamento de Estoque Principal Filiais (Shop9) + Soma do Estoque E-commerce (Tiny)
+      // 3. Processamento de Estoque Principal Filiais (Shop9)
       setStatusUpload(`Processando base principal de estoque (${fileEstoqueShop.name})...`);
       const bufferEstoque = await fileEstoqueShop.arrayBuffer();
       const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
       const sheetEstoque = wbEstoque.Sheets[wbEstoque.SheetNames[0]];
       const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
-      const registrosProcessados = rowsEstoque.map((row, idx) => {
+      const registrosProcessados: any[] = [];
+      const gradesProcessadas = new Set<string>();
+
+      rowsEstoque.forEach((row, idx) => {
         const filial = Number(row['Filial'] || row['Depósito'] || 3);
         const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
         const gradeFilial = `${grade}-${filial}`;
@@ -192,11 +195,7 @@ export default function Home() {
         const familia = String(row['Familia'] || row['Família'] || 'Não Cadastrado');
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
         
-        // Estoque Loja + Estoque E-commerce (Tiny Coluna C com base na Grade SKU Coluna A)
-        const estoqueLoja = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
-        const estoqueEc = mapaEstoqueEc[grade] || 0;
-        const estoqueTotal = estoqueLoja + estoqueEc;
-
+        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || row['Saldo'] || 0);
         const custo = Number(row['Preco'] || row['Custo'] || 0);
         
         const vendaInfo = mapaVendas[gradeFilial] || { qtd: 0, valor: 0, somaPdv: 0, countPdv: 0 };
@@ -206,9 +205,11 @@ export default function Home() {
         const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
         const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
-        const custoTotal = Number((estoqueTotal * custo).toFixed(2));
+        const custoTotal = Number((estoque * custo).toFixed(2));
 
-        return {
+        gradesProcessadas.add(grade);
+
+        registrosProcessados.push({
           data_referencia: dataEnvio,
           grade_filial: gradeFilial,
           grade,
@@ -222,7 +223,7 @@ export default function Home() {
           classe,
           familia,
           fornecedor,
-          estoque: estoqueTotal,
+          estoque,
           custo,
           custo_total: custoTotal,
           margem_loja: margemLoja,
@@ -231,10 +232,62 @@ export default function Home() {
           pdv_ec: pdvEc,
           venda_geral_itens: vendaInfo.qtd,
           venda_geral_valor: Number(vendaInfo.valor.toFixed(2)),
-        };
+        });
       });
 
-      // 4. Envio seguro em lotes para o Supabase
+      // 4. Criação automática da FILIAL 8 (E-commerce) para cada SKU/Grade com base no Tiny
+      gradesProcessadas.forEach((grade) => {
+        const estoqueEc = mapaEstoqueEc[grade];
+        if (estoqueEc !== undefined && estoqueEc > 0) {
+          // Busca um template de produto existente para replicar as informações cadastrais
+          const template = rowsEstoque.find(r => String(r['Grade'] || r['Código_da_Grade']) === grade) || rowsEstoque[0];
+          if (template) {
+            const codigo = Number(template['Codigo'] || template['Código_Produto'] || 1000);
+            const produto = String(template['Produto'] || template['Nome_Produto'] || 'PRODUTO NÃO CADASTRADO');
+            const cor = String(template['Cor'] || template['Nome_Cor'] || 'SEM COR');
+            const tamanho = String(template['Tamanho'] || template['Nome_Tamanho'] || 'UNICO');
+            const genero = String(template['Genero'] || template['Gênero'] || 'Não Cadastrado');
+            const marca = String(template['Marca'] || 'Não Cadastrado');
+            const classe = String(template['Classe'] || 'NÃO CADASTRADO');
+            const familia = String(template['Familia'] || template['Família'] || 'Não Cadastrado');
+            const fornecedor = String(template['Fornecedor'] || 'NÃO CADASTRADO');
+            const custo = Number(template['Preco'] || template['Custo'] || 0);
+            const pdvEc = Number(template['Preco1'] || template['Preço'] || (custo * 1.9));
+            const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
+            const custoTotalEc = Number((estoqueEc * custo).toFixed(2));
+            const gradeFilialEc = `${grade}-8`;
+
+            const vendaInfoEc = mapaVendas[gradeFilialEc] || { qtd: 0, valor: 0 };
+
+            registrosProcessados.push({
+              data_referencia: dataEnvio,
+              grade_filial: gradeFilialEc,
+              grade,
+              codigo,
+              produto,
+              filial: 8, // Filial E-commerce
+              cor,
+              tamanho,
+              genero,
+              marca,
+              classe,
+              familia,
+              fornecedor,
+              estoque: estoqueEc,
+              custo,
+              custo_total: custoTotalEc,
+              margem_loja: 0,
+              pdv_loja: pdvEc,
+              margem_ec: margemEc,
+              pdv_ec: pdvEc,
+              venda_geral_itens: vendaInfoEc.qtd,
+              venda_geral_valor: Number(vendaInfoEc.valor.toFixed(2)),
+            });
+          }
+        }
+      });
+
+      // 5. Envio seguro em lotes para o Supabase
       const tamanhoLote = 300;
       const totalLotes = Math.ceil(registrosProcessados.length / tamanhoLote);
 
@@ -264,7 +317,7 @@ export default function Home() {
         await new Promise(res => setTimeout(res, 200));
       }
 
-      setStatusUpload('Base consolidada e cruzamento de estoque/vendas concluídos com sucesso!');
+      setStatusUpload('Base consolidada com Filial 8 (E-commerce) gerada com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -411,7 +464,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos de loja e e-commerce para cruzar o estoque.</p>
+              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos de loja e e-commerce para gerar a Filial 8.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
@@ -507,7 +560,7 @@ export default function Home() {
             {/* Linha Superior: Totais de Vendas e Estoque no Mês */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
-                <span className="text-xs text-slate-400 font-medium uppercase">Total Estoque (Loja + E-c)</span>
+                <span className="text-xs text-slate-400 font-medium uppercase">Total Estoque (Lojas + Filial 8)</span>
                 <div className="text-2xl font-bold text-white mt-1">{totaisGeraisMes.totalEstoque.toLocaleString('pt-BR')} un</div>
               </div>
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-lg">
@@ -589,7 +642,7 @@ export default function Home() {
                       <th className="p-3">Gênero</th>
                       <th className="p-3">Marca</th>
                       <th className="p-3">Classe</th>
-                      <th className="p-3">Estoque (Loja+E-c)</th>
+                      <th className="p-3">Estoque</th>
                       <th className="p-3">Custo Total</th>
                       <th className="p-3">PDV E-c</th>
                       <th className="p-3">Vendas (Itens)</th>
@@ -603,7 +656,7 @@ export default function Home() {
                         <td className="p-3 font-mono">{item.gradeFilial}</td>
                         <td className="p-3 font-mono">{item.codigo}</td>
                         <td className="p-3 font-medium text-white">{item.produto}</td>
-                        <td className="p-3">{item.filial}</td>
+                        <td className="p-3 font-bold text-indigo-300">{item.filial} {item.filial === 8 ? '(E-c)' : ''}</td>
                         <td className="p-3 text-slate-300">{item.cor}</td>
                         <td className="p-3 text-slate-300">{item.tamanho}</td>
                         <td className="p-3 text-slate-400">{item.genero}</td>
@@ -655,7 +708,7 @@ export default function Home() {
                 <div>
                   <label className="block text-[10px] uppercase font-semibold text-slate-400 mb-1">Valores (Métrica):</label>
                   <select value={metricaDinamica} onChange={(e) => setMetricaDinamica(e.target.value as any)} className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none">
-                    <option value="estoque">Soma de Estoque (Loja + E-c)</option>
+                    <option value="estoque">Soma de Estoque</option>
                     <option value="custoTotal">Soma de Custo Total</option>
                     <option value="pdvEc">Soma de PDV E-commerce</option>
                     <option value="vendaGeralValor">Soma de Valor de Vendas</option>
