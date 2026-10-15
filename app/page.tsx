@@ -35,7 +35,7 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione a data e os relatórios para processamento.');
+  const [statusUpload, setStatusUpload] = useState('Selecione a data e os 4 relatórios para processamento.');
 
   const [dataEnvio, setDataEnvio] = useState<string>('');
   const [fileEstoqueShop, setFileEstoqueShop] = useState<File | null>(null);
@@ -120,7 +120,7 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 1. Processamento de Estoque E-commerce / Tiny (Lendo Coluna A para Grade e Coluna C para Estoque)
+      // 1. Processamento de Estoque E-commerce / Tiny (Coluna A = Grade SKU, Coluna C = Estoque Físico)
       const mapaEstoqueEc: { [grade: string]: number } = {};
       if (fileEstoqueTiny) {
         setStatusUpload(`Lendo saldos de estoque E-commerce (${fileEstoqueTiny.name})...`);
@@ -140,7 +140,7 @@ export default function Home() {
         });
       }
 
-      // 2. Processamento de Vendas (Mapeamento flexível para capturar quantidade, valor e preço médio)
+      // 2. Processamento de Vendas (Colunas I, J, K / Qtde_Vendida / Preco_Total / Preco_Médio com média de PDV)
       const mapaVendas: { [key: string]: { qtd: number, valor: number, somaPdv: number, countPdv: number } } = {};
       const arquivosVendas = [fileVendasShop, fileVendasTiny].filter(Boolean) as File[];
 
