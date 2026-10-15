@@ -82,10 +82,10 @@ export default function Home() {
           filial: item.filial,
           cor: item.cor || 'SEM COR',
           tamanho: item.tamanho || 'UNICO',
-          genero: item.genero || 'Não Cadastrado',
-          marca: item.marca || 'Não Cadastrado',
+          genero: item.genero && item.genero !== 'Não Cadastrado' ? item.genero : 'GERAL',
+          marca: item.marca && item.marca !== 'Não Cadastrado' ? item.marca : 'BEST FIT',
           classe: item.classe || 'NÃO CADASTRADO',
-          familia: item.familia || 'Não Cadastrado',
+          familia: item.familia && item.familia !== 'Não Cadastrado' ? item.familia : 'PADRÃO',
           fornecedor: item.fornecedor || 'NÃO CADASTRADO',
           estoque: item.estoque || 0,
           custoTotal: Number(item.custo_total || 0),
@@ -120,10 +120,9 @@ export default function Home() {
     setLoading(true);
 
     try {
-      // 1. Processa Vendas se houver arquivo fornecido para cruzar histórico
-      const mapaVendas: { [key: string] { qtd: number, valor: number } } = {};
+      const mapaVendas: { [key: string]: { qtd: number, valor: number } } = {};
       if (fileVendasShop) {
-        setStatusUrlMsg(`Lendo relatório de vendas...`);
+        setStatusUpload('Lendo histórico de vendas...');
         const bufVendas = await fileVendasShop.arrayBuffer();
         const wbVendas = XLSX.read(bufVendas, { type: 'array' });
         const shVendas = wbVendas.Sheets[wbVendas.SheetNames[0]];
@@ -142,14 +141,13 @@ export default function Home() {
         });
       }
 
-      // 2. Processa Estoque Principal
       setStatusUpload(`Lendo arquivo principal de estoque (${fileEstoqueShop.name})...`);
       const bufferEstoque = await fileEstoqueShop.arrayBuffer();
       const wbEstoque = XLSX.read(bufferEstoque, { type: 'array' });
       const sheetEstoque = wbEstoque.Sheets[wbEstoque.SheetNames[0]];
       const rowsEstoque: any[] = XLSX.utils.sheet_to_json(sheetEstoque);
 
-      setStatusUpload(`Processando ${rowsEstoque.length} registros e cruzando histórico de vendas...`);
+      setStatusUpload(`Processando ${rowsEstoque.length} registros...`);
 
       const registrosProcessados = rowsEstoque.map((row, idx) => {
         const filial = Number(row['Filial'] || 3);
@@ -159,13 +157,23 @@ export default function Home() {
         const produto = String(row['Produto'] || 'PRODUTO NÃO CADASTRADO');
         const cor = String(row['Cor'] || 'SEM COR');
         const tamanho = String(row['Tamanho'] || 'UNICO');
-        const genero = String(row['Genero'] || row['Gênero'] || 'Não Cadastrado');
-        const marca = String(row['Marca'] || 'Não Cadastrado');
+        
+        // Tratamento para evitar "Não Cadastrado" vindo do ERP
+        const generoRaw = String(row['Genero'] || row['Gênero'] || '');
+        const genero = generoRaw && generoRaw !== 'Não Cadastrado' ? generoRaw : 'GERAL';
+
+        const marcaRaw = String(row['Marca'] || '');
+        const marca = marcaRaw && marcaRaw !== 'Não Cadastrado' ? marcaRaw : 'BEST FIT';
+
         const classe = String(row['Classe'] || 'NÃO CADASTRADO');
-        const familia = String(row['Familia'] || row['Família'] || 'Não Cadastrado');
+
+        const familiaRaw = String(row['Familia'] || row['Família'] || '');
+        const familia = familiaRaw && familiaRaw !== 'Não Cadastrado' ? familiaRaw : 'PADRÃO';
+
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
         const estoque = Number(row['Estoque'] || 0);
 
+        // Mapeamento correto de Custos e Preços do Shop9
         const custo = Number(row['Preco'] || 0);
         const pdvEc = Number(row['Preco1'] || (custo * 1.9));
         const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
@@ -173,7 +181,6 @@ export default function Home() {
         const margemLoja = pdvLoja > 0 ? (pdvLoja - custo) / pdvLoja : 0;
         const custoTotal = Number((estoque * custo).toFixed(2));
 
-        // Dados de Vendas cruzados do histórico
         const vendaInfo = mapaVendas[gradeFilial] || { qtd: 0, valor: 0 };
 
         return {
@@ -205,7 +212,7 @@ export default function Home() {
       const tamanhoLote = 400;
       for (let i = 0; i < registrosProcessados.length; i += tamanhoLote) {
         const lote = registrosProcessados.slice(i, i + tamanhoLote);
-        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)} para o Supabase...`);
+        setStatusUpload(`Enviando lote ${Math.floor(i / tamanhoLote) + 1} de ${Math.ceil(registrosProcessados.length / tamanhoLote)}...`);
 
         const { error } = await supabase
           .from('produtos_compras')
@@ -217,7 +224,7 @@ export default function Home() {
         }
       }
 
-      setStatusUpload('Base consolidada e histórico de vendas gerados com sucesso!');
+      setStatusUpload('Base consolidada gerada e salva com sucesso!');
       setLoading(false);
       setFileEstoqueShop(null);
       setFileVendasShop(null);
@@ -232,10 +239,6 @@ export default function Home() {
       alert('Erro inesperado: ' + err.message);
     }
   };
-
-  function setStatusUrlMsg(msg: string) {
-    setStatusUpload(msg);
-  }
 
   const apagarBaseInteira = async () => {
     if (!confirm('Tem certeza que deseja apagar TODOS os registros da base do Supabase?')) return;
@@ -359,7 +362,7 @@ export default function Home() {
           <form onSubmit={processarEEnviar} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">Upload de Relatórios & Histórico</h1>
-              <p className="text-slate-400 mt-1">Selecione a data, envie o estoque e o relatório de vendas para cruzar o histórico.</p>
+              <p className="text-slate-400 mt-1">Selecione a data, envie os arquivos e consolide a base com precisão.</p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
