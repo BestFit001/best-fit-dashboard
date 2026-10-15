@@ -34,9 +34,13 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'upload' | 'dashboard' | 'dinamica'>('upload');
   const [loading, setLoading] = useState(false);
   const [dados, setDados] = useState<RegistroBase[]>([]);
-  const [statusUpload, setStatusUpload] = useState('Selecione o arquivo de estoque para envio.');
+  const [statusUpload, setStatusUpload] = useState('Selecione os arquivos individualmente para envio seguro.');
 
-  const [fileAtivo, setFileAtivo] = useState<File | null>(null);
+  // Os 4 arquivos independentes
+  const [fileEstoqueShop9, setFileEstoqueShop9] = useState<File | null>(null);
+  const [fileVendasShop9, setFileVendasShop9] = useState<File | null>(null);
+  const [fileEstoqueTiny, setFileEstoqueTiny] = useState<File | null>(null);
+  const [fileVendasTiny, setFileVendasTiny] = useState<File | null>(null);
 
   // Filtros da Base Consolidada
   const [filtroBusca, setFiltroBusca] = useState('');
@@ -94,38 +98,39 @@ export default function Home() {
     }
   };
 
-  const processarArquivoIndividual = async (e: React.FormEvent) => {
+  const processarArquivos = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!fileAtivo) {
-      alert('Selecione um arquivo para enviar!');
+    const arquivoAlvo = fileEstoqueShop9 || fileVendasShop9 || fileEstoqueTiny || fileVendasTiny;
+    if (!arquivoAlvo) {
+      alert('Selecione pelo menos um arquivo para enviar!');
       return;
     }
 
     setLoading(true);
-    setStatusUpload(`Lendo arquivo ${fileAtivo.name}...`);
+    setStatusUpload(`Lendo arquivo ${arquivoAlvo.name}...`);
 
     try {
-      const buffer = await fileAtivo.arrayBuffer();
+      const buffer = await arquivoAlvo.arrayBuffer();
       const workbook = XLSX.read(buffer, { type: 'array' });
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows: any[] = XLSX.utils.sheet_to_json(sheet);
 
-      setStatusUpload(`Processando ${rows.length} registros e enviando em lotes para o Supabase...`);
+      setStatusUpload(`Processando ${rows.length} registros em lotes seguros...`);
 
       const registrosProcessados = rows.map((row, idx) => {
         const filial = Number(row['Filial'] || 3);
-        const grade = String(row['Grade'] || `1000${idx}`);
-        const codigo = Number(row['Codigo'] || 1000 + idx);
-        const produto = String(row['Produto'] || 'PRODUTO NÃO CADASTRADO');
-        const cor = String(row['Cor'] || 'SEM COR');
-        const tamanho = String(row['Tamanho'] || 'UNICO');
+        const grade = String(row['Grade'] || row['Código_da_Grade'] || `1000${idx}`);
+        const codigo = Number(row['Codigo'] || row['Código_Produto'] || 1000 + idx);
+        const produto = String(row['Produto'] || row['Nome_Produto'] || 'PRODUTO NÃO CADASTRADO');
+        const cor = String(row['Cor'] || row['Nome_Cor'] || 'SEM COR');
+        const tamanho = String(row['Tamanho'] || row['Nome_Tamanho'] || 'UNICO');
         const genero = String(row['Genero'] || 'NÃO CADASTRADO');
         const marca = String(row['Marca'] || 'NÃO CADASTRADO');
         const classe = String(row['Classe'] || 'NÃO CADASTRADO');
         const familia = String(row['Familia'] || 'NÃO CADASTRADO');
         const fornecedor = String(row['Fornecedor'] || 'NÃO CADASTRADO');
-        const estoque = Number(row['Estoque'] || 0);
-        const custo = Number(row['Preco'] || 0);
+        const estoque = Number(row['Estoque'] || row['Qtde_Estoque_Atual'] || 0);
+        const custo = Number(row['Preco'] || row['Preco_Total'] || 50.0);
         const pdvEc = Number(row['Preco1'] || (custo * 1.9));
         const pdvLoja = Number(row['Preco2'] || (pdvEc * 1.05));
         const margemEc = pdvEc > 0 ? (pdvEc - custo) / pdvEc : 0;
@@ -170,9 +175,12 @@ export default function Home() {
         if (error) console.error('Erro no lote:', error.message);
       }
 
-      setStatusUpload('Arquivo enviado e sincronizado com sucesso!');
+      setStatusUpload('Arquivo sincronizado com sucesso com o Supabase!');
       setLoading(false);
-      setFileAtivo(null);
+      setFileEstoqueShop9(null);
+      setFileVendasShop9(null);
+      setFileEstoqueTiny(null);
+      setFileVendasTiny(null);
       await carregarDadosDoSupabase();
       setActiveTab('dashboard');
     } catch (err) {
@@ -246,7 +254,7 @@ export default function Home() {
                 activeTab === 'upload' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white hover:bg-slate-900'
               }`}
             >
-              <Upload className="w-4 h-4" /> 1. Upload
+              <Upload className="w-4 h-4" /> 1. Upload (4 Fontes)
             </button>
             <button
               onClick={() => setActiveTab('dashboard')}
@@ -270,36 +278,71 @@ export default function Home() {
 
       <div className="max-w-7xl mx-auto px-6 py-8 flex-1 w-full">
         {activeTab === 'upload' ? (
-          <form onSubmit={processarArquivoIndividual} className="space-y-8 max-w-3xl mx-auto animate-in fade-in duration-300">
+          <form onSubmit={processarArquivos} className="space-y-8 max-w-4xl mx-auto animate-in fade-in duration-300">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">Upload do Relatório de Estoque</h1>
-              <p className="text-slate-400 mt-1">Envie o arquivo principal para popular a base consolidada sem travamentos.</p>
+              <h1 className="text-3xl font-bold tracking-tight text-white">Upload das 4 Fontes Oficiais</h1>
+              <p className="text-slate-400 mt-1">Carregue os arquivos individualmente ou por etapa para alimentar o Supabase sem travar.</p>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 space-y-6">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-2 uppercase tracking-wider">Arquivo de Estoque (.xls / .xlsx / .txt)</label>
-                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-xl p-8 text-center cursor-pointer bg-slate-950 block transition-all">
-                  <FileSpreadsheet className="w-10 h-10 text-indigo-400 mx-auto mb-2" />
-                  <span className="text-sm font-medium text-slate-200 block">{fileAtivo ? fileAtivo.name : 'Clique para escolher o arquivo'}</span>
-                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileAtivo(e.target.files?.[0] || null)} className="hidden" />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+                <div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 01</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Estoque de Todas as Filiais (Shop9)</h3>
+                </div>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileEstoqueShop9 ? fileEstoqueShop9.name : 'Selecionar arquivo...'}</span>
+                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileEstoqueShop9(e.target.files?.[0] || null)} className="hidden" />
                 </label>
               </div>
 
-              <div className="bg-slate-950 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
                 <div>
-                  <h4 className="font-medium text-white text-xs uppercase tracking-wider text-indigo-400">Status</h4>
-                  <p className="text-sm text-slate-300">{statusUpload}</p>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 02</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Vendas de Todas as Filiais (Shop9)</h3>
                 </div>
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 text-sm"
-                >
-                  {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {loading ? 'Enviando...' : 'Enviar p/ Supabase'} <ArrowRight className="w-4 h-4" />
-                </button>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileVendasShop9 ? fileVendasShop9.name : 'Selecionar arquivo...'}</span>
+                  <input type="file" accept=".xls,.xlsx,.txt,.csv" onChange={(e) => setFileVendasShop9(e.target.files?.[0] || null)} className="hidden" />
+                </label>
               </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+                <div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 03</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Saldos em Estoque (Tiny ERP)</h3>
+                </div>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileEstoqueTiny ? fileEstoqueTiny.name : 'Selecionar arquivo...'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileEstoqueTiny(e.target.files?.[0] || null)} className="hidden" />
+                </label>
+              </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex flex-col justify-between">
+                <div>
+                  <div className="text-indigo-400 font-semibold text-xs uppercase tracking-wider mb-1">Fonte 04</div>
+                  <h3 className="text-lg font-bold text-white mb-2">Relatório de Vendas / Notas (Tiny ERP)</h3>
+                </div>
+                <label className="border border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-4 text-center cursor-pointer bg-slate-950 block truncate mt-4">
+                  <span className="text-xs font-medium text-slate-300">{fileVendasTiny ? fileVendasTiny.name : 'Selecionar arquivo...'}</span>
+                  <input type="file" accept=".xls,.xlsx,.csv" onChange={(e) => setFileVendasTiny(e.target.files?.[0] || null)} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 flex items-center justify-between">
+              <div>
+                <h4 className="font-medium text-white text-xs uppercase tracking-wider text-indigo-400">Status</h4>
+                <p className="text-sm text-slate-300">{statusUpload}</p>
+              </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl transition-all shadow-lg flex items-center gap-2 disabled:opacity-50 text-sm"
+              >
+                {loading && <Loader2 className="w-4 h-4 animate-spin" />}
+                {loading ? 'Processando...' : 'Enviar para o Supabase'} <ArrowRight className="w-4 h-4" />
+              </button>
             </div>
           </form>
         ) : activeTab === 'dashboard' ? (
@@ -307,17 +350,16 @@ export default function Home() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h1 className="text-3xl font-bold tracking-tight text-white">Base Consolidada (Supabase)</h1>
-                <p className="text-slate-400 mt-1">Registros salvos e recuperados com sucesso do banco de dados.</p>
+                <p className="text-slate-400 mt-1">Registros salvos e recuperados do banco de dados.</p>
               </div>
               <button 
                 onClick={() => setActiveTab('upload')}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-xl shadow flex items-center gap-2"
               >
-                <RefreshCw className="w-4 h-4" /> Enviar Arquivo
+                <RefreshCw className="w-4 h-4" /> Enviar Mais Arquivos
               </button>
             </div>
 
-            {/* Filtros */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-5 shadow-lg grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs font-medium text-slate-400 mb-1.5">Buscar Produto</label>
@@ -352,7 +394,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Tabela */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-xl">
               <div className="p-4 border-b border-slate-800 bg-slate-950 flex justify-between items-center">
                 <h3 className="text-sm font-semibold text-white">Registros ({dadosFiltrados.length})</h3>
@@ -399,7 +440,6 @@ export default function Home() {
             </div>
           </div>
         ) : (
-          /* ABA 3: TABELA DINÂMICA */
           <div className="space-y-6 animate-in fade-in duration-300">
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
               <div>
@@ -456,7 +496,7 @@ export default function Home() {
                     {estruturaDinamica.linhas.length === 0 ? (
                       <tr>
                         <td colSpan={estruturaDinamica.colunas.length + 2} className="p-8 text-center text-slate-500">
-                          Nenhum dado disponível. Faça o upload do arquivo na primeira aba.
+                          Nenhum dado disponível. Faça o upload dos arquivos na primeira aba.
                         </td>
                       </tr>
                     ) : (
